@@ -1,0 +1,8 @@
+/Events/
+/Functions/
+/Handlers/
+/node_modules/
+.env
+*.json
+*.js
+Procfile
