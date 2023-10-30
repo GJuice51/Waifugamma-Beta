@@ -6,3 +6,4 @@
 *.json
 *.js
 Procfile
+*.log

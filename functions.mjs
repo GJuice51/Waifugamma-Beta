@@ -102,3 +102,27 @@ export function parseAuctionMsg(auctionMess){
   
     privchannel.send(str);
   }
+
+  // Check to see if gami message is a viewed card
+  export function checkCharacter(message) {
+    if (message.embeds.length != 1) {
+      return false;
+    } else if (message.embeds[0].data.description == null) {
+      //console.log("ITS AN INFO!");
+      return false;
+    } else if (message.embeds[0].data.description.indexOf("Claimed") != 0) {
+      //console.log("ITS A SPAWN!");
+      return false;
+    }
+    return true;
+  }
+  
+  // Get the value of stat, given a request
+  export function getInfo(msg, start) {
+    var msgCut = msg.substring(msg.indexOf(start));
+    var endIdx = msgCut.indexOf("\n");
+    endIdx = (endIdx > 0) ? endIdx : 20;
+    var msgtemp = msgCut.substring(0, endIdx);
+    var info = msgtemp.substring(start.length);
+    return [msgCut, info];
+  }

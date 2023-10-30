@@ -33,4 +33,14 @@ export class ChannelOBJ {
         this.date = 'Done';
     };
 
-}
+};
+
+export class GamiCard {
+    constructor(name, waifuID, rarity, event) {
+        this.name = name;
+        this.waifuID = waifuID;
+        this.rarity = rarity;
+        this.event =  event;
+    }
+    
+};
