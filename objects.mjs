@@ -43,4 +43,8 @@ export class GamiCard {
         this.event =  event;
     }
     
+    toString(){
+        var evnt = (this.event === "none")? "" : this.event;
+        return evnt + ' [' + this.rarity + '] ' + this.name + ' (' +this.waifuID + ')';
+    }
 };

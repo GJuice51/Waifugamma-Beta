@@ -3,6 +3,7 @@ import { readFileSync, writeFileSync } from 'fs';
 
 
 
+
 export function checkHandlerPing(privchannel, queueChannel, queueArray){
   // GJuice, Adil, Menma
   const handlersToPing = ['238454480385867776', '238454480385867776', '561281757165387777'];
@@ -12,12 +13,6 @@ export function checkHandlerPing(privchannel, queueChannel, queueArray){
     if(queueArray.length > 3 && queueArray[queueArray.length - 4] === handlersToPing[i])
     privchannel.send('<@' + whoToPing + '>: <#1053420903159054337>');
   }
-  // if(queueArray.length > 3 && queueArray[queueArray.length - 4] === whoToPing)
-  //   privchannel.send('<@' + whoToPing + '>: <#1053420903159054337>');
-  // if(queueArray.length > 3 && queueArray[queueArray.length - 4] === whoToPingAdil)
-  //   privchannel.send('<@' + whoToPingAdil + '>: <#1053420903159054337>');
-  // if(queueArray.length > 3 && queueArray[queueArray.length - 4] === whoToPingMenma)
-  //   privchannel.send('<@' + whoToPingMenma + '>: <#1053420903159054337>');
 }
 
 // export function displayTimers(privchannel, channelIDs, status){
@@ -126,3 +121,7 @@ export function parseAuctionMsg(auctionMess){
     var info = msgtemp.substring(start.length);
     return [msgCut, info];
   }
+
+
+  
+
