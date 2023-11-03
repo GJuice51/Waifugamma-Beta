@@ -4,6 +4,8 @@
 // !lb
 // !ca
 // !close
+// !addevent
+// !deleteevent
 
 import { config } from 'dotenv';
 config();
@@ -15,23 +17,16 @@ import { ChannelType, time, Client, GatewayIntentBits, Partials, Collection, Com
 const { Guilds, GuildMembers, GuildMessages, MessageContent, DirectMessages, DirectMessageReactions, DirectMessageTyping, GuildMessageReactions } = GatewayIntentBits;
 const { User, Message, GuildMember, ThreadMember, Channel} = Partials;
 //const { userMention, memberNicknameMention, channelMention, roleMention } = require('discord.js');
-//const { time } = require('discord.js');
-//const wait = require('node:timers/promises').setTimeout;
 import { REST } from '@discordjs/rest';
 import { channel } from 'node:diagnostics_channel';
 import { get } from 'node:http';
 import { readFileSync, writeFileSync, promises as fsPromises } from 'fs'; // new
 import { updateWin, getTop } from './spreadsheetMJS.mjs';
-import { fileToData, auctionToFile, displayTimers,checkCharacter, getInfo} from './functions.mjs'; // new
+import { checkLastAuction, saveGlobalID, fileToData, auctionToFile, displayTimers, checkCharacter, getInfo} from './functions.mjs'; // new
 import { ChannelOBJ, GamiCard} from './objects.mjs'; // new
-import { createAucDMMenu, createAuctionDM, DMConfirmation, FinalConfirmation } from './auctionDM.mjs';
+import { createAuctionDM, DMConfirmation, FinalConfirmation, createSelectStringMenuAuc } from './auctionDM.mjs';
+//import { getDefaultAutoSelectFamilyAttemptTimeout } from 'node:net';
 const rest = new REST({ version: '10'}).setToken(TOKEN);
-
-
-function scheduleMessage(){
-  const date = new Date (new Date().getTime() + 2000)
-  schedule.scheduleJob(date, () => console.log('Scheduled Message!'));
-}
 
 function lbEmbed(s1, s2){
   var e = new EmbedBuilder()
@@ -62,23 +57,35 @@ const auctionTimesFile = "auctionTimes.txt"
 
 const day = 86400000;
 const second = 1000;
+const AUCTION_COOLDOWN = 30 * second;//37 * day;
+const AUCTION_LENGTH =  15 * second;// day
 
 
-
-const AUCTION_VERIFICATION_ID = '1168698674298245231';
 const GUILD_ID = '1013859678201069568'; 
 const TICKET_CAT_ID = '1167881102938091560';
 const QUEUE_CHANNEL_ID = '1038245842122977360';
 const AUCTION_HANDLING_CHANNEL_ID = '1168753393574088774';
+const HANDLER_CHAT_CHANNEL_ID = '1033815697161212055';
+const AUCTION_VERIFICATION_ID = '1168698674298245231';
+const GJUICE_ID = '230114915413655552';
+const AGUA_ID = '238454480385867776';
 //const WAIFUKAPPA_ID = '1030655480441348096'; // dont need?
 //const HANDLER_ID = '892866809919836172'; // probably doesnt work
 
-var queueArray = [];
-var channelMessages = new Array();
-var verificationMessages = new Map();
-var tickets = new Map();
-var ticketsGamiCard = new Map(); // DELETE
-var lastAuctioned = new Map();
+var eventOptionsArray = [];
+var SELECT_MENU_BUILDER_AUCTIONS = createSelectStringMenuAuc(eventOptionsArray);
+var verificationMessages = new Map(); // VerificationMessage -> auctioneerID
+var tickets = new Map(); // auctioneerID -> channelID
+var ticketsGamiCard = new Map(); // auctioneerID -> [GamiCard, Gamicard, str]
+var lastAuctioned = new Map(); // auctioneerID -> Date
+var handlingAuctionLimit = new Map(); // handlerID -> count
+var queueImageURL = new Map(); // QueueMessage -> [0/1, url, url]
+
+
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////
+//                                       Useful Functions
+/////////////////////////////////////////////////////////////////////////////////////////////////////
 
 function createTicket(message) {
   const guild = client.guilds.cache.get(GUILD_ID);
@@ -128,11 +135,14 @@ function createTicket(message) {
       .setTitle('Auction Ticket')
       .setThumbnail('https://cdn.discordapp.com/attachments/1033815697161212055/1168700893575774239/latest.png?ex=6552b886&is=65404386&hm=39fd388d3b02354183b1d74062e6d1491c649f9de7b6f961dab1f23ef9cb9957&')
       .addFields({name:' ', value: 'Created by <@' + message.author.id + '>'},
-        {name: 'To get started, please __view__ the character(s) you want to auction.', value: ' '},
-        {name: '__Rules__ ', value: ' '},
-        {name: ' ', value: '**1.** Please wait one month after your previous auction to submit another ticket.'},
-        {name: ' ', value: '**2.** You cannot auction the same character more than three times. '},
-        {name: ' ', value: '**3.** While waiting in queue after submitting your ticket, **DO NOT** trade your characters away! '}
+        {name: 'To get started, please __view__ the card(s) you want to auction.', value: ' '},
+        {name: '__Rules__', value: ' '},
+        {name: ' ', value: '**1.** You can auction either **1** or **2** cards.'},
+        {name: ' ', value: '**2.** You can only auction characters with at least 30 wishlist.'},
+        {name: ' ', value: '**3.** You can only auction once a month.'},
+        {name: ' ', value: '**4.** You cannot auction the same card more than three times.'},
+        {name: ' ', value: '**5.** While waiting in queue after submitting your ticket, **DO NOT** trade your cards away! '},
+        {name: ' ', value: 'If there are any problems, DM a handler!'}
       )
       .setFooter({text: "Type `!close` to close the channel. The channel will close in 3 minutes."})
       .setColor(0x4CEB34);
@@ -144,7 +154,6 @@ function createTicket(message) {
     schedule.scheduleJob(closeTime, () => {
       // check to see if channel is open
       if(client.guilds.cache.get(GUILD_ID) && guild.channels.cache.has(channel.id)) 
-        //channel.send("!close");
         closeChannel(channel);
     });
 
@@ -155,32 +164,8 @@ function createTicket(message) {
   return channel.id;
 }
 
-// function chatInTicket(message, channel) {
-//   channel.send('From <@' + message.author.id + '>: ' + message.content);
-// }
-
-
-async function overwriteQueue(queueChannel){
-  channelMessages = [];
-  queueArray = [];
-  channelMessages = await queueChannel.messages.fetch({limit: 100});
-  
-  channelMessages.forEach(msg => queueArray.push(msg.author.id));
-  queueArray.pop();
-}
-
-function checkHandlerPing(privchannel, queueChannel, queueArray){
-  // GJuice, Adil, Menma
-  const handlersToPing = ['238454480385867776', '238454480385867776', '561281757165387777'];
-  overwriteQueue(queueChannel);
-  
-  for (let i = 0; i < handlersToPing.length; i++){
-    if(queueArray.length > 3 && queueArray[queueArray.length - 4] === handlersToPing[i])
-    privchannel.send('<@' + whoToPing + '>: <#1053420903159054337>');
-  }
-}
-
- function closeChannel(channel){
+// Close a channel
+function closeChannel(channel){
   if (channel.parent.id != TICKET_CAT_ID) 
     return;
 
@@ -193,26 +178,47 @@ function checkHandlerPing(privchannel, queueChannel, queueArray){
   });
   channel.delete();
 }
+
+// Send the ticket to the verification channel
 function sendToVerification(AUCTION_VERIFICATION_ID, gcs, numChar, userID, channel){
   const aucVerChannel = client.channels.cache.get(AUCTION_VERIFICATION_ID);
 
-  var chars =  'Auctioneer: <@' + userID + '>\nItem 1: ' + gcs[0].toString();
-  chars += (numChar === "Two")? '\nItem 2:'+ gcs[1].toString() : "";
+  const lastAuc = (lastAuctioned.has(userID)) 
+    ? lastAuctioned.get(userID).toLocaleDateString("en-US") : "N/A";
+  var embedColour = '';
+  if (gcs[0].rarity === 'Ω' || (numChar === "Two" && gcs[1].rarity === 'Ω')){ 
+    embedColour = 12186367; // omega 
+  } else if (gcs[0].event !== 'none' || (numChar === "Two" && gcs[1].event !== 'none')) {
+    embedColour = 15293728;  // event
+  } else {
+    embedColour = 16076006; // zeta
+  }
 
-  aucVerChannel.send(chars)
+  const verEmbed = new EmbedBuilder()
+      .setTimestamp()
+      .addFields(
+        {name: ' ', value: '**Auctioneer**: <@' + userID + '>'},
+        {name: ' ', value: 'Item 1: ' + gcs[0].toString()},
+        {name: ' ', value: (numChar === "Two")? '\nItem 2: '+ gcs[1].toString() : ' '})
+      .setColor(embedColour) // 0x7393B3
+      .setFooter({text: 'Last ticket: ' + lastAuc})
+      .setThumbnail(gcs[0].imgURL);
+
+  aucVerChannel.send({ embeds: [verEmbed]})
     .then(message => {
         message.react('✅');
         message.react('❌');
         verificationMessages.set(message, userID);
     });
     
-  // Deletes GamiCard and closes channel after 5 seconds
-  const closeTime = new Date(new Date().getTime() + 5000); 
-  const guild = client.guilds.cache.get(GUILD_ID);
+  // Delete GamiCard and close channel after 5 seconds
+  const closeTime = new Date(new Date().getTime() + 5 * second); 
+  //const guild = client.guilds.cache.get(GUILD_ID);
   schedule.scheduleJob(closeTime, () => {
-    ticketsGamiCard.delete(userID);
-    if(guild.channels.cache.has(channel.id))
-      closeChannel(channel);
+    //ticketsGamiCard.delete(userID);
+    channel.delete();
+    //if(guild.channels.cache.has(channel.id))
+      //closeChannel(channel);//////////////////////////
   });
 }
 
@@ -222,11 +228,6 @@ function sendToVerification(AUCTION_VERIFICATION_ID, gcs, numChar, userID, chann
 //                                              Main
 /////////////////////////////////////////////////////////////////////////////////////////////////////
 client.on('ready', () => {
-  
-  // Reset queue channel
-  const queueChannel = client.channels.cache.get(`1038245842122977360`);
-  overwriteQueue(queueChannel);
-
   // Load past auctions
   fileToData(auctionTimesFile, channels, channelIDs);
   console.log('The bot is ready.');
@@ -244,38 +245,31 @@ client.on('messageCreate', async message => {
       return;
     
     // Get the character names from message
-    channels.get(channelString).updateAucStringArray(message.content) // new
+    channels.get(channelString).updateAucStringArray(message.content) 
 
     // Configure timers
     const currentTime = new Date();
     channels.get(channelString).updateDate(currentTime) // Get current time
-    // const endAuctionDate = new Date(currentTime.getTime() + day); // real
-    const endAuctionDate = new Date(currentTime.getTime() + 15 * second); // short to test
-    const nearAuctionDate = new Date(currentTime.getTime() + 5 * second); // ping GJuice when queue is near
-    
-    auctionToFile(auctionTimesFile, channels, channelIDs);
-    
-    const userping = message.author.id;
-    const privchannel = client.channels.cache.get(`1033815697161212055`); 
-    const queueChannel = client.channels.cache.get(`1038245842122977360`);
+    const endAuctionDate = new Date(currentTime.getTime() + AUCTION_LENGTH); 
 
-    // Auction is almost ending
-    schedule.scheduleJob(nearAuctionDate, () => {
-      checkHandlerPing(privchannel, queueChannel, queueArray);
-    });
-
-    // AUCTION ENDS
+    
+    auctionToFile(auctionTimesFile, channels, channelIDs); // Save auction to a file
+    
+    // End the auction after 24h
+    const privchannel = client.channels.cache.get(HANDLER_CHAT_CHANNEL_ID); 
     schedule.scheduleJob(endAuctionDate, () => {
       channels.get(channelString).finishAuction();
       message.reply("Waiting...");
-      privchannel.send('<@' + userping + '>, <#' + getchannel + '> is done.');
+      privchannel.send('<@' + message.author.id + '>, <#' + getchannel + '> is done.');
       auctionToFile(auctionTimesFile, channels, channelIDs);
     });
 
-  } else if(message.content.startsWith('!timers') && await client.channels.fetch(message.channel.id) == "1033815697161212055"){
-    const privchannel = client.channels.cache.get(`1033815697161212055`);
+    // Display open channels and timers
+  } else if(message.content.startsWith('!timers') && message.channel.id === HANDLER_CHAT_CHANNEL_ID){
+    const privchannel = client.channels.cache.get(HANDLER_CHAT_CHANNEL_ID);
     displayTimers(privchannel, channelIDs, channels);
   
+    // Display current auctions
   } else if(message.content.startsWith('!auction')){
     const getchannel = await client.channels.fetch(message.channel.id);
   
@@ -285,7 +279,9 @@ client.on('messageCreate', async message => {
     for(let i = 0; i < 8; i++){
       var chan = channels.get(channelIDs[i]);
       if(chan.status !== 'Done'){
-        embedAuction.addFields({name: ' > <#' + channelIDs[i] + '>' + ' — ' + chan.auctionCountDown, value: chan.auctionStringArray});
+        embedAuction.addFields(
+          {name: ' > <#' + channelIDs[i] + '>' + ' — ' + chan.auctionCountDown, value: chan.auctionStringArray}
+        );
         s += ' > <#' + channelIDs[i] + '>\n' +  chan.auctionStringArray;
       }
     }
@@ -301,7 +297,7 @@ client.on('messageCreate', async message => {
 
     getchannel.send({ embeds: [embedAuction]});
       
-
+    // Display leaderboard of bidder winners
   } else if(message.content.startsWith('!lb') && await client.channels.fetch(message.channel.id) == "1117994809706152037"){
   const getchannel = await client.channels.fetch(message.channel.id);
   
@@ -480,14 +476,7 @@ client.on('messageCreate', async message => {
     }
 
     getchannel.send('' + id1 + ' ' + char1 + ' ' + id2 + ' ' + char2);
-     
-  } else if(message.content.startsWith('!clearauctions') && (message.author.id == '230114915413655552' || message.author.id == '238454480385867776')) {  
-    for (let i = 0; i<= 8; i++) {
-      channels.get(channelIDs[i]).finishAuction()
-    }
-    auctionToFile(auctionTimesFile, channels, channelIDs);
-    message.reply("Auctions have been cleared!")
-  
+       
     //////////////////////////////////////////////////////////////////////////////////////////////
     //                              Auction bot ticket system 
     //////////////////////////////////////////////////////////////////////////////////////////////
@@ -498,46 +487,68 @@ client.on('messageCreate', async message => {
   } else if (message.content.startsWith('!ca') && tickets.has(message.author.id)){
     message.reply("You have an active ticket!");
 
-  } else if (message.content.startsWith('!ca') && lastAuctioned.has(message.author.id) && (new Date() < new Date(lastAuctioned.get(message.author.id).getTime() + 37 * day))) {
-    message.reply("It has not been one month since your last auction!");
+  // } else if (message.content.startsWith('!ca') && lastAuctioned.has(message.author.id) ) { 
+  //   try{
+  //     const dateToAucAgain = new Date(lastAuctioned.get(message.author.id).getTime() + AUCTION_COOLDOWN);
+  //     if (new Date() < dateToAucAgain) 
+  //       message.reply("It has not been one month since your last auction! You can auction again on " + dateToAucAgain.toLocaleDateString("en-US") + '.');          
+  //   } catch(e) {
+  //     console.err(e);
+  //     message.reply("Something went wrong... please DM a handler.");
+  //   }
+    
 
   } else if(message.content.startsWith('!ca') ){
-    createTicket(message);
+
+    try{
+      if (lastAuctioned.has(message.author.id)){
+        const dateToAucAgain = new Date(lastAuctioned.get(message.author.id).getTime() + AUCTION_COOLDOWN);
+        if (new Date() < dateToAucAgain) 
+          message.reply("It has not been one month since your last auction! You can auction again on " + dateToAucAgain.toLocaleDateString("en-US") + '.');
+        else
+          createTicket(message);
+      } else
+        createTicket(message);
+    } catch(e) {
+      console.err(e);
+      message.reply("Something went wrong... please DM a handler.");
+    }
 
   } else if(message.author.id == '722418701852344391' && message.channel.parent.id === TICKET_CAT_ID) {
     if (checkCharacter(message)) {
-      
-      var cardData = message.embeds[0].data.description;
-      var name = message.embeds[0].data.title;
-      var userID = ""
-      var waifuID = "";
-      var rarity = "";
-      [cardData, userID] = getInfo(cardData, "Claimed by ");
-      [cardData, waifuID] = getInfo(cardData, "Waifu ID: ");
-      [cardData, rarity] = getInfo(cardData, "Type: ");
-      userID = userID.substring(userID.indexOf("@")+1).substring(0, userID.length - 3);
-      rarity = rarity.substring(rarity.indexOf("(")+1).substring(0,1);
-      // Step 1: Checks if it's omega or Zeta
 
-
-      try{
-
-    
-
-        if(!(rarity === "Ω" || rarity === "ζ")){
+      try {
+        var cardData = message.embeds[0].data.description;
+        var name = message.embeds[0].data.title;
+        var userID = ""
+        var waifuID = "";
+        var rarity = "";
+        var globalID = "";
+        [cardData, userID] = getInfo(cardData, "Claimed by ");
+        [cardData, globalID] = getInfo(cardData, "Global ID: ");
+        [cardData, waifuID] = getInfo(cardData, "Waifu ID: ");
+        [cardData, rarity] = getInfo(cardData, "Type: ");
+        userID = userID.substring(userID.indexOf("@")+1).substring(0, userID.length - 3);
+        rarity = rarity.substring(rarity.indexOf("(")+1).substring(0,1);
+        const imgURL = message.embeds[0].image.url;
+        
+        // Step 1: Checks if it's omega or Zeta
+        if (checkLastAuction(globalID)){
+          message.reply("This card has been auctioned recently!"); 
+        } else if(!(rarity === "Ω" || rarity === "ζ")){
           message.reply("Character must be Zeta or Omega!");
           //Step 2a: Checks if the auction has been finalized.
         } else if(tickets.has(userID) && message.channel.id === tickets.get(userID) && (ticketsGamiCard.get(userID)[2] === "Two" || ticketsGamiCard.get(userID)[2] === "One" )){
           message.reply("You have already finalized your auction!");
           //Step 2b: Starts auction process
         } else if (tickets.has(userID) && message.channel.id === tickets.get(userID)){
+          saveGlobalID(globalID); 
           // Step 2b continued: Runs if there are no items.
           if(ticketsGamiCard.get(userID)[0] === "None"){
-            ticketsGamiCard.get(userID)[0] = new GamiCard(name, waifuID, rarity, "None");
+            ticketsGamiCard.get(userID)[0] = new GamiCard(name, waifuID, rarity, "None", imgURL);
             
-
             var charEvent = await new Promise((resolve, reject) => {
-              resolve(createAuctionDM(message, userID));
+              resolve(createAuctionDM(message, userID, SELECT_MENU_BUILDER_AUCTIONS));
             });
             //Step 3a: Cancel.
             if (charEvent === "Cancelled"){
@@ -564,9 +575,9 @@ client.on('messageCreate', async message => {
             }
             // Step 2c: Runs if there is 1 item.
           }else{
-            ticketsGamiCard.get(userID)[1] = new GamiCard(name, waifuID, rarity, "None");
+            ticketsGamiCard.get(userID)[1] = new GamiCard(name, waifuID, rarity, "None", imgURL);
             var charEvent = await new Promise((resolve, reject) => {
-              resolve(createAuctionDM(message, userID));
+              resolve(createAuctionDM(message, userID, SELECT_MENU_BUILDER_AUCTIONS));
             });
             // Step 3a: Cancel.
             if (charEvent === "Cancelled"){
@@ -591,49 +602,293 @@ client.on('messageCreate', async message => {
       
       ////
       }catch(e){
-        console.log(e);
-        console.error("Main Auction Bot: Do not worry, channel is deleted before auction could finish.")
+        console.error(e);
       }
       
     }
   } else if (message.content.startsWith('!close')) {
     closeChannel(message.channel);
-  }
+    
+  } else if(message.content.startsWith('!clearauctions') && (message.author.id == GJUICE_ID || message.author.id == AGUA_ID)) {  
+    for (let i = 0; i<= 8; i++) {
+      channels.get(channelIDs[i]).finishAuction();
+    }
+    auctionToFile(auctionTimesFile, channels, channelIDs);
+    message.reply("Auctions have been cleared!");
+    
+    // Add a new event option.
+  } else if(message.content.startsWith('!addevent') && message.channel.id === HANDLER_CHAT_CHANNEL_ID){     
+    
+    // Read the arguments
+    var newEvent = '';
+    var emoji = '';
+    try {
+      const regex = /^[a-zA-Z]+$/; 
+      const arrEvent = message.content.replace(/ +/g, ' ').split(' ');     
+      emoji = arrEvent[1];
+
+      if (arrEvent.length !== 4 || regex.test( emoji[0] )) 
+        throw("Das tuff");
+      newEvent = arrEvent[2] + ' ' + arrEvent[3];
+
+    } catch(e) { 
+      message.reply("Wrong format `!addoption :emoji: Event Year`");
+      return;
+    }
+
+    // Add the event
+    try{
+      const newOption = new StringSelectMenuOptionBuilder()
+          .setEmoji(emoji)
+          .setLabel(newEvent)
+          .setDescription(' ') 
+          .setValue(newEvent); 
+
+      eventOptionsArray.push(newOption);
+      SELECT_MENU_BUILDER_AUCTIONS = createSelectStringMenuAuc(eventOptionsArray);
+      
+      message.reply("Added: " + emoji + ' ' + newEvent + '.');
+    } catch(e) { 
+      console.err(e);
+      message.reply("Something went wrong...");
+    }
+
+  // Delete an event option.
+  } else if(message.content.startsWith('!deleteevent') && (message.author.id == GJUICE_ID || message.author.id == AGUA_ID)){
+
+    // Read the arguments
+    var newEvent = '';
+    try {
+      const arrEvent = message.content.replace(/ +/g, ' ').split(' ');     
+
+      if (arrEvent.length !== 3 ) 
+        throw("Das tuff");
+      newEvent = arrEvent[1] + ' ' + arrEvent[2];
+
+    } catch(e) { 
+      message.reply("Wrong format `!deleteoption Event Year`");
+      return;
+    }
+
+    // Delete the event
+    try{
+      const newStringMenuBuilder = new StringSelectMenuBuilder()      
+        .setCustomId('event')
+        .setPlaceholder('Event');
+      
+      var deleted = false;
+      SELECT_MENU_BUILDER_AUCTIONS.options.forEach((option) => {
+        if(option.data.value !== newEvent){ 
+          newStringMenuBuilder.addOptions(option);
+        } else {
+          const index = eventOptionsArray.indexOf(option => option.data.value === newEvent);
+          deleted = true;
+        }
+      });
+      SELECT_MENU_BUILDER_AUCTIONS = newStringMenuBuilder;
+      message.reply((deleted) ? "Deleted: " + newEvent : "Could not find " + newEvent + ".");
+    } catch (e) {
+      console.error(e)
+      message.reply("Something went wrong...");
+    }
+
+    // DELETE LATER, USED FOR TESTING
+   } //else if (message.content.startsWith('!embed')) {
+  //   // Add to auction-handling
+  //   const aucHandlingChan = client.channels.cache.get(AUCTION_HANDLING_CHANNEL_ID);
+  //   const newEmbed = new EmbedBuilder()
+  //     .setTimestamp()
+  //     .addFields(
+  //       {name: ' ', value: "Auctioneer: <@" + GJUICE_ID + '>'},
+  //       {name: ' ', value: "Item 1: [ζ] Gawr Gura (4031)"},
+  //       {name: ' ', value: "Item 2: Halloween 2023 [ζ] Nagito Komaeda (1634)"}
+  //     )
+  //     .setFooter({text: "Last ticket: N/A" })
+  //     .setColor(0xFF0000);
+  //   aucHandlingChan.send( { embeds: [newEmbed]} )
+  //     .then(message => {
+  //       message.react('🔒');
+  //   });
+  // }
   
 }); 
  
 
 
-client.on('messageReactionAdd', async (reaction, user) =>{
-
-  if (reaction.message.channel.id !== AUCTION_VERIFICATION_ID || !verificationMessages.has(reaction.message) || user.id === client.user.id)
+client.on('messageReactionAdd', /*async*/ (reaction, user) =>{
+  // Ignore bot reactions
+  if ( user.id === client.user.id) {
     return;
-
-  try {
-    if(reaction.emoji.name === '✅'){
-      lastAuctioned.set(verificationMessages.get(reaction.message), new Date());  
-      await reaction.message.delete();
-      verificationMessages.delete(reaction.message);  
-
-      const queueChan = client.channels.cache.get(QUEUE_CHANNEL_ID);
-      var str = reaction.message.content;
-      str = str.substring(str.indexOf('\n')+1);
-      queueChan.send(str);
-      
-      const aucHandling = client.channels.cache.get(AUCTION_HANDLING_CHANNEL_ID);
-      aucHandling.send(reaction.message.content);
-
-
-    } else if(reaction.emoji.name === '❌'){
-      const dmUser = await client.users.fetch(verificationMessages.get(reaction.message));
-      await dmUser.send("Your ticket was denied.");
-      await reaction.message.delete();
-      verificationMessages.delete(reaction.message);
-        
-    } 
-  } catch(e){
-    console.error( "damn...: " + e);
   }
+  // Handle reactions in verification channel
+  if (reaction.message.channel.id === AUCTION_VERIFICATION_ID && verificationMessages.has(reaction.message)) {
+   
+    try {
+      // Accept ticket
+      if(reaction.emoji.name === '✅'){ 
+        lastAuctioned.set(verificationMessages.get(reaction.message), new Date());  
+        
+
+        // Add to queue-channel
+        const origEmbed = reaction.message.embeds[0];
+        const queueChan = client.channels.cache.get(QUEUE_CHANNEL_ID);
+        const newEmbed = new EmbedBuilder()
+          .addFields(
+            {name: ' ', value: origEmbed.data.fields[1].value},
+            {name: ' ', value: origEmbed.data.fields[2].value + ' '}
+          )
+          .setColor(origEmbed.data.color)
+          .setThumbnail(origEmbed.data.thumbnail.url);
+
+        
+        queueChan.send( { embeds: [newEmbed]} )
+          .then(message => { 
+            const gcs = ticketsGamiCard.get(verificationMessages.get(reaction.message));
+            if (gcs[2] === "Two") {
+              message.react('🔄'); 
+              queueImageURL.set(message, [0, gcs[0].imgURL, gcs[1].imgURL]);
+            } 
+          }) .then(() => {
+            var auctioneerID = reaction.message.embeds[0].data.fields[0].value;
+            auctioneerID = auctioneerID.substring(auctioneerID.indexOf('@') + 1, auctioneerID.indexOf('>'));
+            verificationMessages.delete(reaction.message);
+            tickets.delete(auctioneerID);
+            ticketsGamiCard.delete(auctioneerID); 
+            reaction.message.delete(); 
+  
+          });
+        
+        // Add to auction-handling     
+        const aucHandlingChan = client.channels.cache.get(AUCTION_HANDLING_CHANNEL_ID);
+        origEmbed.data.color = 16711680; // yellow
+        aucHandlingChan.send( { embeds: [origEmbed]} )
+          .then(message => { message.react('🔒'); });
+
+        
+       
+
+
+        // Decline ticket
+      } else if(reaction.emoji.name === '❌'){
+        const dmUser = client.users.fetch(verificationMessages.get(reaction.message));
+        dmUser.send("Your ticket was denied.")
+        .then(() => {
+          var auctioneerID = reaction.message.embeds[0].data.fields[0].value;
+          auctioneerID = auctioneerID.substring(auctioneerID.indexOf('@') + 1, auctioneerID.indexOf('>'));
+          verificationMessages.delete(reaction.message);
+          tickets.delete(auctioneerID);
+          ticketsGamiCard.delete(auctioneerID); 
+          reaction.message.delete(); 
+
+        });
+        
+          
+      } 
+
+      // Delete tickets, cards etc...
+      if (reaction.emoji.name === '✅' || reaction.emoji.name === '❌') {
+        //console.log(reaction.message.embeds[0].data.fields[0].value);
+        
+        // var auctioneerID = reaction.message.embeds[0].data.fields[0].value;
+        // auctioneerID = auctioneerID.substring(auctioneerID.indexOf('@') + 1, auctioneerID.indexOf('>'));
+        // verificationMessages.delete(reaction.message);
+        // tickets.delete(auctioneerID);
+        // ticketsGamiCard.delete(auctioneerID); 
+        // reaction.message.delete(); 
+ 
+      }
+
+    } catch(e){
+      console.error(e);
+    }
+  }
+
+  // Auction Handling Channel: Check for when handler claims auction
+  if (reaction.message.channel.id == AUCTION_HANDLING_CHANNEL_ID &&  reaction.emoji.name === '🔒') {
+    if(handlingAuctionLimit.has(user.id) && handlingAuctionLimit.get(user.id) == 10){
+      const closeMsg = new Date(new Date().getTime() + 5 * second); 
+      reaction.message.channel.send("You are handling too many auctions!").then(sentMsg =>{
+        schedule.scheduleJob(closeMsg, () => {
+          sentMsg.delete();
+        });
+      });
+    }
+    else{
+      if(!handlingAuctionLimit.has(user.id))
+        handlingAuctionLimit.set(user.id, 1);
+      else
+        handlingAuctionLimit.set(user.id, handlingAuctionLimit.get(user.id) + 1);
+
+      const origEmbed = reaction.message.embeds[0];
+      const newEmbed = new EmbedBuilder()
+        .addFields(
+          {name: ' ', value: origEmbed.data.fields[0].value},
+          {name: ' ', value: origEmbed.data.fields[1].value},
+          {name: ' ', value: origEmbed.data.fields[2].value + ' '},
+          {name: ' ', value: 'Handler: <@' + user.id + '>'}
+        )
+        .setColor(0xFFFF00)
+        .setTimestamp()
+        .setFooter({text: origEmbed.data.footer.text});
+      reaction.message.edit( { embeds: [newEmbed]} )
+        .then(message => {
+          message.reactions.removeAll()
+          .then(msg => {msg.react('✅'); });
+          
+      });
+    }
+    
+  }
+
+    // Auction Handling Channel: Check for when handler puts up an auction.
+  if (reaction.message.channel.id == AUCTION_HANDLING_CHANNEL_ID &&  reaction.emoji.name === '✅') {
+    if(handlingAuctionLimit.get(user.id) == 0){}
+    else
+    handlingAuctionLimit.set(user.id, handlingAuctionLimit.get(user.id) - 1);
+
+    const origEmbed = reaction.message.embeds[0];
+    const newEmbed = new EmbedBuilder()
+      .setTitle('__**Completed**__')
+      .addFields(
+        {name: ' ', value: origEmbed.data.fields[0].value},
+        {name: ' ', value: origEmbed.data.fields[1].value},
+        {name: ' ', value: origEmbed.data.fields[2].value + ' '},
+        {name: ' ', value: '**Handler**: <@' + user.id + '>'}
+      )
+      .setColor(0x00FF00)
+      .setFooter({text: origEmbed.data.footer.text});
+    reaction.message.edit( { embeds: [newEmbed]} ) 
+      .then(message => {
+        message.reactions.removeAll();
+      });
+
+
+  // Flip the picture in queue channel
+  }else if(reaction.message.channel.id == QUEUE_CHANNEL_ID && reaction.emoji.name === '🔄'){
+    try{
+
+      if(!queueImageURL.has(reaction.message))
+        return;
+
+      var imgLinks = queueImageURL.get(reaction.message);
+      
+      const origEmbed = reaction.message.embeds[0];
+      const newEmbed = new EmbedBuilder()
+        .addFields(
+          {name: ' ', value: origEmbed.data.fields[0].value},
+          {name: ' ', value: origEmbed.data.fields[1].value + ' '}
+        )
+        .setColor(origEmbed.data.color)
+        .setThumbnail( (imgLinks[0] === 0)? imgLinks[2] : imgLinks[1]);
+      imgLinks[0] = (imgLinks[0] === 0)? 1 : 0;
+      
+      reaction.message.edit( { embeds: [newEmbed]} )
+
+    }catch(e){
+      console.error(e);
+    }
+  }
+  
 
   
 });

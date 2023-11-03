@@ -1,27 +1,14 @@
 
 import { readFileSync, writeFileSync } from 'fs'; 
+import schedule from 'node-schedule';
+
+const day = 86400000;
+//parseAuctionMsg(auctionMess), fileToData(auctionTimesFile, channels, channelIDs), 
+//auctionToFile(auctionTimesFile, channels, channelIDs), displayTimers(privchannel, channelIDs, channels)
+//displayTimers(privchannel, channelIDs, channels), checkCharacter(message), getInfo(msg, start), saveGlobalID(id, cardLastAuctioned)
 
 
-
-
-export function checkHandlerPing(privchannel, queueChannel, queueArray){
-  // GJuice, Adil, Menma
-  const handlersToPing = ['238454480385867776', '238454480385867776', '561281757165387777'];
-  overwriteQueue(queueChannel);
-  
-  for (let i = 0; i < handlersToPing.length; i++){
-    if(queueArray.length > 3 && queueArray[queueArray.length - 4] === handlersToPing[i])
-    privchannel.send('<@' + whoToPing + '>: <#1053420903159054337>');
-  }
-}
-
-// export function displayTimers(privchannel, channelIDs, status){
-//   var str = '';
-//   for(let i = 0; i < channelIDs.length; i++)
-//     str += '<#' + channelIDs[i] + '>: ' + status[i] + '\n';
-
-//   privchannel.send(str);
-// }
+var cardLastAuctioned = new Map();
 
 
 export function parseAuctionMsg(auctionMess){
@@ -102,11 +89,9 @@ export function parseAuctionMsg(auctionMess){
   export function checkCharacter(message) {
     if (message.embeds.length != 1) {
       return false;
-    } else if (message.embeds[0].data.description == null) {
-      //console.log("ITS AN INFO!");
+    } else if (message.embeds[0].data.description == null) { // info
       return false;
-    } else if (message.embeds[0].data.description.indexOf("Claimed") != 0) {
-      //console.log("ITS A SPAWN!");
+    } else if (message.embeds[0].data.description.indexOf("Claimed") != 0) { // spawn
       return false;
     }
     return true;
@@ -122,6 +107,28 @@ export function parseAuctionMsg(auctionMess){
     return [msgCut, info];
   }
 
+   
+  export function saveGlobalID(id){
+    const rmCardDate = new Date(new Date().getTime() + 31*day); 
+    cardLastAuctioned.set(id, rmCardDate);
+
+    // set a schedule
+    schedule.scheduleJob(rmCardDate, () => {
+      cardLastAuctioned.delete(id);
+    });
+  }
+
+  // Check to see if card has been auctioned in the last month
+  export function checkLastAuction(id) {
+    return cardLastAuctioned.has(id) && new Date() < cardLastAuctioned.get(id);
+  }
 
   
 
+  // export function buildQueueImageEmbed(originalEmbed, url){
+
+  //   const origEmbed = originalEmbed.embeds[0].setThumbnail(url);
+
+  //   return origEmbed;
+
+  // }

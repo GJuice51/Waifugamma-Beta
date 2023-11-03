@@ -3,82 +3,116 @@ const { Guilds, GuildMembers, GuildMessages, MessageContent, DirectMessages, Dir
 const { User, Message, GuildMember, ThreadMember, Channel} = Partials;
 
 
-export async function createAucDMMenu(message, userID){
-    try{
-        const eventSelect = new StringSelectMenuBuilder()
-        .setCustomId('event')
-        .setPlaceholder('Event')
-        .addOptions(
-        new StringSelectMenuOptionBuilder()
+function pushNewMenuChoices(eventSelect, newOptionsArray){
+    eventSelect.addOptions(new StringSelectMenuOptionBuilder()
         .setLabel('None')
-        .setDescription('x1')
-        .setValue('none'),
-        new StringSelectMenuOptionBuilder()
-            .setLabel('🔪 Halloween 2023')
-            .setDescription(' ')
-            .setValue('Halloween 2023'),
-        new StringSelectMenuOptionBuilder()
-            .setLabel('🌴 Summer 2023')
-            .setDescription(' ')
-            .setValue('Summer 2023'),
-        new StringSelectMenuOptionBuilder()
-            .setLabel('🌸 Spring 2023')
-            .setDescription(' ')
-            .setValue('Spring 2023'),
-        new StringSelectMenuOptionBuilder()
-            .setLabel('🌹 Valentines 2023')
-            .setDescription(' ')
-            .setValue('Valentines 2023'),
-        new StringSelectMenuOptionBuilder()
-            .setLabel('❄️ Winter 2022')
-            .setDescription(' ')
-            .setValue('Winter 2022'),
-        new StringSelectMenuOptionBuilder()
-            .setLabel('⚰️ Halloween 2022')
-            .setDescription(' ')
-            .setValue('Halloween 2022'),
-        new StringSelectMenuOptionBuilder()
-            .setLabel('🥥  Summer 2022')
-            .setDescription(' ')
-            .setValue('Summer 2022'),
-        new StringSelectMenuOptionBuilder()
-            .setLabel('🌼  Spring 2022')
-            .setDescription(' ')
-            .setValue('Spring 2022'),
-        new StringSelectMenuOptionBuilder()
-            .setLabel('💟  Valentines 2022')
-            .setDescription(' ')
-            .setValue('Valentines 2022'),
-        new StringSelectMenuOptionBuilder()
-            .setLabel('☃️  Winter 2021')
-            .setDescription(' ')
-            .setValue('Winter 2021'),
-        new StringSelectMenuOptionBuilder()
-            .setLabel('🦇 Halloween 2021')
-            .setDescription(' ')
-            .setValue('Halloween 2021'),
-        new StringSelectMenuOptionBuilder()
-            .setLabel('🌞  Summer 2021')
-            .setDescription(' ')
-            .setValue('Summer 2021'),
-        new StringSelectMenuOptionBuilder()
-            .setLabel('🥚 Spring 2021')
-            .setDescription(' ')
-            .setValue('Spring 2021'),
-        new StringSelectMenuOptionBuilder()
-            .setLabel('🍫  Valentines 2021')
-            .setDescription(' ')
-            .setValue('Valentines 2021'),
-        new StringSelectMenuOptionBuilder()
-            .setLabel('🎄 Winter 2020')
-            .setDescription(' ')
-            .setValue('Winter 2020'),
-        new StringSelectMenuOptionBuilder()
-            .setLabel('🎃 Halloween 2020')
-            .setDescription(' ')
-            .setValue('Halloween 2020'),
+        .setDescription(' ')
+        .setValue('none')
+    );
+    for(var i = newOptionsArray.length - 1; i > -1; i--){
+        eventSelect.addOptions(newOptionsArray[i]);
+    }
 
-        );
+}
+
+export function createSelectStringMenuAuc(newOptionsArray){
+    var eventSelect = new StringSelectMenuBuilder()
+    .setCustomId('event')
+    .setPlaceholder('Event');
+    pushNewMenuChoices(eventSelect, newOptionsArray);
+
+    eventSelect.addOptions(
+    new StringSelectMenuOptionBuilder()
+        .setEmoji('🔪')
+        .setLabel('Halloween 2023')
+        .setDescription(' ')
+        .setValue('Halloween 2023'),
+    new StringSelectMenuOptionBuilder()
+        .setEmoji('🌴')
+        .setLabel('Summer 2023')
+        .setDescription(' ')
+        .setValue('Summer 2023'),
+    new StringSelectMenuOptionBuilder()
+        .setEmoji('🌸')
+        .setLabel('Spring 2023')
+        .setDescription(' ')
+        .setValue('Spring 2023'),
+    new StringSelectMenuOptionBuilder()
+        .setEmoji('🌹')
+        .setLabel('Valentines 2023')
+        .setDescription(' ')
+        .setValue('Valentines 2023'),
+    new StringSelectMenuOptionBuilder()
+        .setEmoji('❄️')
+        .setLabel('Winter 2022')
+        .setDescription(' ')
+        .setValue('Winter 2022'),
+    new StringSelectMenuOptionBuilder()
+        .setEmoji('⚰️')
+        .setLabel('Halloween 2022')
+        .setDescription(' ')
+        .setValue('Halloween 2022'),
+    new StringSelectMenuOptionBuilder()
+        .setEmoji('🥥')
+        .setLabel('Summer 2022')
+        .setDescription(' ')
+        .setValue('Summer 2022'),
+    new StringSelectMenuOptionBuilder()
+        .setEmoji('🌼')
+        .setLabel('Spring 2022')
+        .setDescription(' ')
+        .setValue('Spring 2022'),
+    new StringSelectMenuOptionBuilder()
+        .setEmoji('💟')
+        .setLabel('Valentines 2022')
+        .setDescription(' ')
+        .setValue('Valentines 2022'),
+    new StringSelectMenuOptionBuilder()
+        .setEmoji('☃️')
+        .setLabel('Winter 2021')
+        .setDescription(' ')
+        .setValue('Winter 2021'),
+    new StringSelectMenuOptionBuilder()
+        .setEmoji('🦇')
+        .setLabel('Halloween 2021')
+        .setDescription(' ')
+        .setValue('Halloween 2021'),
+    new StringSelectMenuOptionBuilder()
+        .setEmoji('🌞')
+        .setLabel('Summer 2021')
+        .setDescription(' ')
+        .setValue('Summer 2021'),
+    new StringSelectMenuOptionBuilder()
+        .setEmoji('🥚')
+        .setLabel('Spring 2021')
+        .setDescription(' ')
+        .setValue('Spring 2021'),
+    new StringSelectMenuOptionBuilder()
+        .setEmoji('🍫')
+        .setLabel('Valentines 2021')
+        .setDescription(' ')
+        .setValue('Valentines 2021'),
+    new StringSelectMenuOptionBuilder()
+        .setEmoji('🎄')
+        .setLabel('Winter 2020')
+        .setDescription(' ')
+        .setValue('Winter 2020'),
+    new StringSelectMenuOptionBuilder()
+        .setEmoji('🎃')
+        .setLabel('Halloween 2020')
+        .setDescription(' ')
+        .setValue('Halloween 2020')
+
+    );
+    return eventSelect;
+}
+
+
+
+
+async function createAucDMMenu(message, userID, SELECT_MENU_BUILDER_AUCTIONS){
+    try{
+        var eventSelect = SELECT_MENU_BUILDER_AUCTIONS;
         const row1 = new ActionRowBuilder()
         .addComponents(eventSelect);
 
@@ -124,8 +158,8 @@ export async function createAucDMMenu(message, userID){
         });
 
     }catch(e){
-        console.log(e + "\n");
-        console.log("createAucDMMenu: Do not worry, channel is deleted before auction could finish.");
+        console.error(e + "\n");
+        console.error("createAucDMMenu: Channel is deleted before auction could finish.");
     }
 
 }
@@ -139,7 +173,7 @@ export async function createAucDMMenu(message, userID){
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 
-export async function createAuctionDM(message, userID){
+export async function createAuctionDM(message, userID, SELECT_MENU_BUILDER_AUCTIONS){
     try{
         var dmConfirmation = new EmbedBuilder().setTimestamp();
         dmConfirmation.addFields({name: 'Is this the character that you want to auction?', value: " ", inline: true});
@@ -161,7 +195,7 @@ export async function createAuctionDM(message, userID){
             embeds: [dmConfirmation],
             components: [dmRow],
         });
-        //const collectorFilter = i => i.user.id === message.author.id;
+        
         const collectorFilter = i => i.user.id === userID;
 
         try {
@@ -171,7 +205,7 @@ export async function createAuctionDM(message, userID){
                 response.delete();
                 
                 return new Promise((resolve, reject) => {
-                    resolve(createAucDMMenu(message, userID));
+                    resolve(createAucDMMenu(message, userID, SELECT_MENU_BUILDER_AUCTIONS));
 
                 });
 
@@ -180,13 +214,11 @@ export async function createAuctionDM(message, userID){
                 response.delete();
                 await message.reply("What made you change your mind? Hmph!");
                 return "Cancelled";
-
-                //await response.editReply({ content: 'Please enter the character\'s index number to create an auction.', components: [] });
             }
         } catch (e) {
             if(error instanceof ChannelNotCached){
-                console.log(e + "\n");
-                console.log("createAuctionDM: Do not worry, channel is deleted before auction could finish.");
+                console.error(e + "\n");
+                console.error("createAuctionDM: Channel is deleted before auction could finish.");
             }else{
                 response.delete();
                 await message.reply("Confirmation not received within 1 minute, cancelling.");
@@ -196,8 +228,8 @@ export async function createAuctionDM(message, userID){
         }
 
     }catch(e){
-        console.log(e + "\n");
-        console.log("createAuctionDM: Do not worry, channel is deleted before auction could finish.");
+        console.error(e + "\n");
+        console.error("createAuctionDM: Channel is deleted before auction could finish.");
     }
 }
 
@@ -214,12 +246,10 @@ export async function createAuctionDM(message, userID){
 
 export async function DMConfirmation(message, userID, gc){
     try{
-        // if(gc.event === "none")
-        //     gc.event === "";
+
 
         var dmConfirmation = new EmbedBuilder().setTimestamp();
         dmConfirmation.addFields({name: '`Item 1: ' + gc.toString() + ' `\nPlease select an option.', value: " ", inline: true});
-        //dmConfirmation.addFields({name: '`Item 1: ' + gc.event + ' [' + gc.rarity + '] ' + gc.name + ' (' + gc.waifuID + ')`\nPlease select an option.', value: " ", inline: true});
         dmConfirmation.setColor(0x40C7F4);
         dmConfirmation.setTitle('Confirmation');
         
@@ -243,7 +273,6 @@ export async function DMConfirmation(message, userID, gc){
             components: [dmRow],
         });
 
-        //const collectorFilter = i => i.user.id === message.author.id;
         const collectorFilter = i => i.user.id === userID;
 
         try {
@@ -261,13 +290,11 @@ export async function DMConfirmation(message, userID, gc){
                 response.delete();
                 await message.reply("What made you change your mind? Hmph!");
                 return "Zero";
-
-                //await response.editReply({ content: 'Please enter the character\'s index number to create an auction.', components: [] });
             }
         } catch (e) {
             if(error instanceof ChannelNotCached){
-                console.log(e + "\n");
-                console.log("DMConfirmation: Do not worry, channel is deleted before auction could finish.");
+                console.error(e + "\n");
+                console.error("DMConfirmation: Channel is deleted before auction could finish.");
             }else{
                 response.delete();
                 return "Two";
@@ -275,8 +302,8 @@ export async function DMConfirmation(message, userID, gc){
         }     
         return "Two";
     }catch(e){
-        console.log(e + "\n");
-        console.log("DMConfirmation: Do not worry, channel is deleted before auction could finish.");
+        console.error(e + "\n");
+        console.error("DMConfirmation: Channel is deleted before auction could finish.");
     }
 
 }
@@ -292,18 +319,11 @@ export async function DMConfirmation(message, userID, gc){
 
 export async function FinalConfirmation(message, userID, gc2){
     try{
-        // if(gc2[0].event === "none")
-        //     gc2[0].event = "";
-        // if(gc2[1].event === "none")
-        //     gc2[1].event = "";
-        var dmConfirmation = new EmbedBuilder().setTimestamp();
-        //dmConfirmation.addFields({name: '`Item 1: ' + gc2[0].event + ' [' + gc2[0].rarity + '] ' + gc2[0].name + ' (' + gc2[0].waifuID + ')`\n' 
-         //                       + '`Item 2: ' + gc2[1].event + ' [' + gc2[1].rarity + '] ' + gc2[1].name + ' (' + gc2[1].waifuID + ')`\n'                            
-         //                       +'Are you finished with with auction? If so, click Submit.', value: " ", inline: true});
 
+        var dmConfirmation = new EmbedBuilder().setTimestamp();
         dmConfirmation.addFields({name: '`Item 1: ' + gc2[0].toString() + '`\n' 
                                 + '`Item 2: ' + gc2[1].toString() + '`\n'                            
-                                +'Are you finished with with auction? If so, click Submit.', value: " ", inline: true});
+                                +'Submit this ticket?', value: " ", inline: true});
         dmConfirmation.setColor(0x40C7F4);
         dmConfirmation.setTitle('Confirmation');
         
@@ -323,7 +343,6 @@ export async function FinalConfirmation(message, userID, gc2){
             components: [dmRow],
         });
 
-        //const collectorFilter = i => i.user.id === message.author.id;
         const collectorFilter = i => i.user.id === userID;
 
         try {
@@ -338,12 +357,11 @@ export async function FinalConfirmation(message, userID, gc2){
                 await message.reply("What made you change your mind? Hmph!");
                 return "Zero";
 
-                //await response.editReply({ content: 'Please enter the character\'s index number to create an auction.', components: [] });
             }
         } catch (e) {
             if(error instanceof ChannelNotCached){
-                console.log(e + "\n");
-                console.log("FinalConfirmation: Do not worry, channel is deleted before auction could finish.");
+                console.error(e + "\n");
+                console.error("FinalConfirmation: Channel is deleted before auction could finish.");
             }else{
                 response.delete();
                 return "Zero";
@@ -351,8 +369,8 @@ export async function FinalConfirmation(message, userID, gc2){
         }     
         return "Zero";
     }catch(e){
-        console.log(e + "\n");
-        console.log("FinalConfirmation: Do not worry, channel is deleted before auction could finish.");
+        console.error(e + "\n");
+        console.error("FinalConfirmation: Channel is deleted before auction could finish.");
     }
 
 }

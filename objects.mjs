@@ -36,15 +36,16 @@ export class ChannelOBJ {
 };
 
 export class GamiCard {
-    constructor(name, waifuID, rarity, event) {
+    constructor(name, waifuID, rarity, event, imgURL) {
         this.name = name;
         this.waifuID = waifuID;
         this.rarity = rarity;
         this.event =  event;
+        this.imgURL = imgURL;
     }
     
     toString(){
         var evnt = (this.event === "none")? "" : this.event;
-        return evnt + ' [' + this.rarity + '] ' + this.name + ' (' +this.waifuID + ')';
+        return evnt + ' [' + this.rarity + '] ' + this.name + ' (' + this.waifuID + ')';
     }
 };
