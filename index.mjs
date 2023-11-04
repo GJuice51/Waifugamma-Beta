@@ -23,7 +23,7 @@ import { get } from 'node:http';
 import { readFileSync, writeFileSync, promises as fsPromises } from 'fs'; // new
 import { updateWin, getTop } from './spreadsheetMJS.mjs';
 import { checkLastAuction, saveGlobalID, fileToData, auctionToFile, displayTimers, checkCharacter, getInfo} from './functions.mjs'; // new
-import { ChannelOBJ, GamiCard} from './objects.mjs'; // new
+import { ChannelOBJ, GamiCard, PicSwap, QueueImgs} from './objects.mjs'; // new
 import { createAuctionDM, DMConfirmation, FinalConfirmation, createSelectStringMenuAuc } from './auctionDM.mjs';
 //import { getDefaultAutoSelectFamilyAttemptTimeout } from 'node:net';
 const rest = new REST({ version: '10'}).setToken(TOKEN);
@@ -57,7 +57,7 @@ const auctionTimesFile = "auctionTimes.txt"
 
 const day = 86400000;
 const second = 1000;
-const AUCTION_COOLDOWN = 30 * second;//37 * day;
+const AUCTION_COOLDOWN = 5 * second;//37 * day;
 const AUCTION_LENGTH =  15 * second;// day
 
 
@@ -69,7 +69,6 @@ const HANDLER_CHAT_CHANNEL_ID = '1033815697161212055';
 const AUCTION_VERIFICATION_ID = '1168698674298245231';
 const GJUICE_ID = '230114915413655552';
 const AGUA_ID = '238454480385867776';
-//const WAIFUKAPPA_ID = '1030655480441348096'; // dont need?
 //const HANDLER_ID = '892866809919836172'; // probably doesnt work
 
 var eventOptionsArray = [];
@@ -79,7 +78,7 @@ var tickets = new Map(); // auctioneerID -> channelID
 var ticketsGamiCard = new Map(); // auctioneerID -> [GamiCard, Gamicard, str]
 var lastAuctioned = new Map(); // auctioneerID -> Date
 var handlingAuctionLimit = new Map(); // handlerID -> count
-var queueImageURL = new Map(); // QueueMessage -> [0/1, url, url]
+var queueImageURL = new QueueImgs(); // QueueMessage -> PicSwap
 
 
 
@@ -174,25 +173,19 @@ function closeChannel(channel){
       const user = client.users.cache.get(userID);
       user.send("Closing ticket...");
       tickets.delete(userID); 
+      ticketsGamiCard.delete(userID); 
     }
-  });
+  }); 
   channel.delete();
 }
 
 // Send the ticket to the verification channel
-function sendToVerification(AUCTION_VERIFICATION_ID, gcs, numChar, userID, channel){
+function sendToVerification(gcs, numChar, userID){
   const aucVerChannel = client.channels.cache.get(AUCTION_VERIFICATION_ID);
 
+  // Display date of last ticket 
   const lastAuc = (lastAuctioned.has(userID)) 
     ? lastAuctioned.get(userID).toLocaleDateString("en-US") : "N/A";
-  var embedColour = '';
-  if (gcs[0].rarity === 'Ω' || (numChar === "Two" && gcs[1].rarity === 'Ω')){ 
-    embedColour = 12186367; // omega 
-  } else if (gcs[0].event !== 'none' || (numChar === "Two" && gcs[1].event !== 'none')) {
-    embedColour = 15293728;  // event
-  } else {
-    embedColour = 16076006; // zeta
-  }
 
   const verEmbed = new EmbedBuilder()
       .setTimestamp()
@@ -200,7 +193,7 @@ function sendToVerification(AUCTION_VERIFICATION_ID, gcs, numChar, userID, chann
         {name: ' ', value: '**Auctioneer**: <@' + userID + '>'},
         {name: ' ', value: 'Item 1: ' + gcs[0].toString()},
         {name: ' ', value: (numChar === "Two")? '\nItem 2: '+ gcs[1].toString() : ' '})
-      .setColor(embedColour) // 0x7393B3
+      .setColor(gcs[0].getBorderColor()) 
       .setFooter({text: 'Last ticket: ' + lastAuc})
       .setThumbnail(gcs[0].imgURL);
 
@@ -210,16 +203,6 @@ function sendToVerification(AUCTION_VERIFICATION_ID, gcs, numChar, userID, chann
         message.react('❌');
         verificationMessages.set(message, userID);
     });
-    
-  // Delete GamiCard and close channel after 5 seconds
-  const closeTime = new Date(new Date().getTime() + 5 * second); 
-  //const guild = client.guilds.cache.get(GUILD_ID);
-  schedule.scheduleJob(closeTime, () => {
-    //ticketsGamiCard.delete(userID);
-    channel.delete();
-    //if(guild.channels.cache.has(channel.id))
-      //closeChannel(channel);//////////////////////////
-  });
 }
 
 
@@ -355,8 +338,7 @@ client.on('messageCreate', async message => {
             lbStringIDs += '#' + (i+1) + ': <@' + board.ids[i] + '>\n';
             lbStringWins += board.wins[i] + '\n';
           }
-          //await interaction.guild.members.ban(target);
-          //await confirmation.update({ content: `${target.username} has been banned for reason: ${reason}`, components: [] });
+
           embedLB = lbEmbed(lbStringIDs, lbStringWins);
           if(tens == 10)
             await confirmation.update({ embeds: [embedLB], components: [rowLDis] });
@@ -486,25 +468,14 @@ client.on('messageCreate', async message => {
   
   } else if (message.content.startsWith('!ca') && tickets.has(message.author.id)){
     message.reply("You have an active ticket!");
-
-  // } else if (message.content.startsWith('!ca') && lastAuctioned.has(message.author.id) ) { 
-  //   try{
-  //     const dateToAucAgain = new Date(lastAuctioned.get(message.author.id).getTime() + AUCTION_COOLDOWN);
-  //     if (new Date() < dateToAucAgain) 
-  //       message.reply("It has not been one month since your last auction! You can auction again on " + dateToAucAgain.toLocaleDateString("en-US") + '.');          
-  //   } catch(e) {
-  //     console.err(e);
-  //     message.reply("Something went wrong... please DM a handler.");
-  //   }
     
-
   } else if(message.content.startsWith('!ca') ){
 
     try{
       if (lastAuctioned.has(message.author.id)){
         const dateToAucAgain = new Date(lastAuctioned.get(message.author.id).getTime() + AUCTION_COOLDOWN);
         if (new Date() < dateToAucAgain) 
-          message.reply("It has not been one month since your last auction! You can auction again on " + dateToAucAgain.toLocaleDateString("en-US") + '.');
+          message.reply("It hasn't been one month since your last auction! You can auction again on " + dateToAucAgain.toLocaleDateString("en-US") + '.');
         else
           createTicket(message);
       } else
@@ -532,7 +503,7 @@ client.on('messageCreate', async message => {
         rarity = rarity.substring(rarity.indexOf("(")+1).substring(0,1);
         const imgURL = message.embeds[0].image.url;
         
-        // Step 1: Checks if it's omega or Zeta
+        // Step 1: Checks if it's Omega or Zeta
         if (checkLastAuction(globalID)){
           message.reply("This card has been auctioned recently!"); 
         } else if(!(rarity === "Ω" || rarity === "ζ")){
@@ -542,62 +513,83 @@ client.on('messageCreate', async message => {
           message.reply("You have already finalized your auction!");
           //Step 2b: Starts auction process
         } else if (tickets.has(userID) && message.channel.id === tickets.get(userID)){
-          saveGlobalID(globalID); 
           // Step 2b continued: Runs if there are no items.
-          if(ticketsGamiCard.get(userID)[0] === "None"){
-            ticketsGamiCard.get(userID)[0] = new GamiCard(name, waifuID, rarity, "None", imgURL);
-            
-            var charEvent = await new Promise((resolve, reject) => {
-              resolve(createAuctionDM(message, userID, SELECT_MENU_BUILDER_AUCTIONS));
-            });
-            //Step 3a: Cancel.
-            if (charEvent === "Cancelled"){
-              ticketsGamiCard.set(userID, ["None", "None", "Zero"]);
-              //Step 3b. Submit and stores first item.
-            }else{
-              ticketsGamiCard.get(userID)[0].event = charEvent;
-              //Step 4. Asks for confirmation: Submit 1 item, type in the 2nd time, or cancel.
-              ticketsGamiCard.get(userID)[2] = await new Promise((resolve, reject) => {
-                resolve(DMConfirmation(message, userID, ticketsGamiCard.get(userID)[0] ));
+            if(typeof ticketsGamiCard.get(userID)[0] === 'string' && ticketsGamiCard.get(userID)[0] === "None"){
+              ticketsGamiCard.get(userID)[0] = new GamiCard(name, waifuID, rarity, "none", imgURL, globalID);
+              
+              var charEvent = await new Promise((resolve, reject) => {
+                resolve(createAuctionDM(message, userID, SELECT_MENU_BUILDER_AUCTIONS));
               });
-
-              if(ticketsGamiCard.get(userID)[2] == "More"){
-                //Does nothing, and waits for second character.
-
-               //Step 5b. Starts the queuing process with ONE Item. 
-              }else if(ticketsGamiCard.get(userID)[2] == "One"){
-                //Starts the queuing process
-                sendToVerification(AUCTION_VERIFICATION_ID, ticketsGamiCard.get(userID), "One", userID, message.channel);
-              //Step 5c. Cancel.
-              }else{
+              //Step 3a: Cancel.
+              if (charEvent === "Cancelled"){
                 ticketsGamiCard.set(userID, ["None", "None", "Zero"]);
+                //ticketsGamiCard.get(userID)
+                //Step 3b. Submit and stores first item.
+              }else{
+                ticketsGamiCard.get(userID)[0].event = charEvent;
+                //Step 4. Asks for confirmation: Submit 1 item, type in the 2nd time, or cancel.
+                ticketsGamiCard.get(userID)[2] = await new Promise((resolve, reject) => {
+                  resolve(DMConfirmation(message, userID, ticketsGamiCard.get(userID)[0] ));
+                });
+
+                if(ticketsGamiCard.get(userID)[2] == "More"){
+                  //Does nothing, and waits for second character.
+
+                //Step 5b. Starts the queuing process with ONE Item. 
+                }else if(ticketsGamiCard.get(userID)[2] == "One"){
+                  //Starts the queuing process
+                  sendToVerification(ticketsGamiCard.get(userID), "One", userID);
+                  const closeTime = new Date(new Date().getTime() + 5 * second); 
+                  schedule.scheduleJob(closeTime, () => {
+                    message.channel.delete();
+                  });
+                //Step 5c. Cancel.
+                }else{
+                  ticketsGamiCard.set(userID, ["None", "None", "Zero"]);
+                }
+              }
+              
+            }
+            //Checks if the user viewed a second character before completing the previous application.
+            else if(ticketsGamiCard.get(userID)[2] === "Zero"){ 
+              message.reply("Please complete the previous application!");
+              // Step 2c: Runs if there is 1 item.
+
+            } else if(globalID === ticketsGamiCard.get(userID)[0].globalID){
+              message.reply("You're currently auctioning this card dummy! :face_with_hand_over_mouth: ");
+            } else{
+              //Check if user tries to view a 3rd card after completing the submission of the first card.
+              if(typeof ticketsGamiCard.get(userID)[1] !== 'string'){
+                message.reply("You can only auction a maximum of two cards! To reset, hit cancel.");
+              }else{
+                ticketsGamiCard.get(userID)[1] = new GamiCard(name, waifuID, rarity, "none", imgURL, globalID);
+                var charEvent = await new Promise((resolve, reject) => {
+                  resolve(createAuctionDM(message, userID, SELECT_MENU_BUILDER_AUCTIONS));
+                });
+                // Step 3a: Cancel.
+                if (charEvent === "Cancelled"){
+                  ticketsGamiCard.set(userID, ["None", "None", "Zero"]);
+                // Step 3b: Submit and stores 2nd item.
+                } else {
+                  ticketsGamiCard.get(userID)[1].event = charEvent;
+                  //Step 4. Asks for confirmation.
+                  ticketsGamiCard.get(userID)[2] = await new Promise((resolve, reject) => {
+                    resolve(FinalConfirmation(message, userID, ticketsGamiCard.get(userID)));
+                  });
+                  // Step 5a: Starts queuing process for 2 items.
+                  if(ticketsGamiCard.get(userID)[2] == "Two"){
+                    sendToVerification(ticketsGamiCard.get(userID), "Two", userID);
+                    const closeTime = new Date(new Date().getTime() + 5 * second); 
+                    schedule.scheduleJob(closeTime, () => {
+                      message.channel.delete();
+                    });
+                    // Step 5b: Cancel.
+                  }else{
+                    ticketsGamiCard.set(userID, ["None", "None", "Zero"]);
+                  }
+                }
               }
             }
-            // Step 2c: Runs if there is 1 item.
-          }else{
-            ticketsGamiCard.get(userID)[1] = new GamiCard(name, waifuID, rarity, "None", imgURL);
-            var charEvent = await new Promise((resolve, reject) => {
-              resolve(createAuctionDM(message, userID, SELECT_MENU_BUILDER_AUCTIONS));
-            });
-            // Step 3a: Cancel.
-            if (charEvent === "Cancelled"){
-              ticketsGamiCard.set(userID, ["None", "None", "Zero"]);
-            // Step 3b: Submit and stores 2nd item.
-            } else {
-              ticketsGamiCard.get(userID)[1].event = charEvent;
-              //Step 4. Asks for confirmation.
-              ticketsGamiCard.get(userID)[2] = await new Promise((resolve, reject) => {
-                resolve(FinalConfirmation(message, userID, ticketsGamiCard.get(userID)));
-              });
-              // Step 5a: Starts queuing process for 2 items.
-              if(ticketsGamiCard.get(userID)[2] == "Two"){
-                sendToVerification(AUCTION_VERIFICATION_ID, ticketsGamiCard.get(userID), "Two", userID, message.channel);
-                // Step 5b: Cancel.
-              }else{
-                ticketsGamiCard.set(userID, ["None", "None", "Zero"]);
-              }
-            }
-          }
         }
       
       ////
@@ -606,20 +598,27 @@ client.on('messageCreate', async message => {
       }
       
     }
+    // Close a ticket channel
   } else if (message.content.startsWith('!close')) {
-    closeChannel(message.channel);
-    
+    try{ closeChannel(message.channel); }
+    catch(e) { console.error(e); }
+   
+    // Admin command - clear auctions
   } else if(message.content.startsWith('!clearauctions') && (message.author.id == GJUICE_ID || message.author.id == AGUA_ID)) {  
-    for (let i = 0; i<= 8; i++) {
-      channels.get(channelIDs[i]).finishAuction();
+    try{
+      for (let i = 0; i<= 8; i++) {
+        channels.get(channelIDs[i]).finishAuction();
+      }
+      auctionToFile(auctionTimesFile, channels, channelIDs);
+      message.reply("Auctions have been cleared!");
+    } catch(e) {
+      console.error(e); 
     }
-    auctionToFile(auctionTimesFile, channels, channelIDs);
-    message.reply("Auctions have been cleared!");
     
     // Add a new event option.
   } else if(message.content.startsWith('!addevent') && message.channel.id === HANDLER_CHAT_CHANNEL_ID){     
     
-    // Read the arguments
+    // Private channel: read the arguments to add event into select menu.
     var newEvent = '';
     var emoji = '';
     try {
@@ -636,7 +635,7 @@ client.on('messageCreate', async message => {
       return;
     }
 
-    // Add the event
+    // Private channel: Add the event into select menu.
     try{
       const newOption = new StringSelectMenuOptionBuilder()
           .setEmoji(emoji)
@@ -653,7 +652,7 @@ client.on('messageCreate', async message => {
       message.reply("Something went wrong...");
     }
 
-  // Delete an event option.
+  // Delete an event option from select menu.
   } else if(message.content.startsWith('!deleteevent') && (message.author.id == GJUICE_ID || message.author.id == AGUA_ID)){
 
     // Read the arguments
@@ -692,7 +691,7 @@ client.on('messageCreate', async message => {
       message.reply("Something went wrong...");
     }
 
-    // DELETE LATER, USED FOR TESTING
+    // COMMANDS BELOW USED FOR TESTING
    } //else if (message.content.startsWith('!embed')) {
   //   // Add to auction-handling
   //   const aucHandlingChan = client.channels.cache.get(AUCTION_HANDLING_CHANNEL_ID);
@@ -710,25 +709,36 @@ client.on('messageCreate', async message => {
   //       message.react('🔒');
   //   });
   // }
-  
+  else if (message.content.startsWith('!maps')) {
+    console.log('verificationMessages: ' + verificationMessages.size);
+    console.log('tickets: ' + tickets.size);
+    console.log('ticketsGamiCard: ' + ticketsGamiCard.size);
+    ticketsGamiCard.forEach((gcs, id) => {
+      var gc2 =  (gcs[2] == "Two") ? "gc": "none";
+      console.log(".  " + id + " => [gc, " + gc2 + ", " + gcs[2] +"]");
+    });
+    console.log('lastAuctioned: ' + lastAuctioned.size);
+    console.log('queueImageURL: ' + queueImageURL.size);
+    console.log('-----------------------------');
+    
+  }
 }); 
  
 
 
-client.on('messageReactionAdd', /*async*/ (reaction, user) =>{
+client.on('messageReactionAdd', (reaction, user) =>{
   // Ignore bot reactions
   if ( user.id === client.user.id) {
     return;
   }
   // Handle reactions in verification channel
   if (reaction.message.channel.id === AUCTION_VERIFICATION_ID && verificationMessages.has(reaction.message)) {
-   
     try {
+      const auctioneerID = verificationMessages.get(reaction.message);
       // Accept ticket
-      if(reaction.emoji.name === '✅'){ 
-        lastAuctioned.set(verificationMessages.get(reaction.message), new Date());  
+      if(reaction.emoji.name === '✅'){  
+        lastAuctioned.set(auctioneerID, new Date());  
         
-
         // Add to queue-channel
         const origEmbed = reaction.message.embeds[0];
         const queueChan = client.channels.cache.get(QUEUE_CHANNEL_ID);
@@ -739,64 +749,42 @@ client.on('messageReactionAdd', /*async*/ (reaction, user) =>{
           )
           .setColor(origEmbed.data.color)
           .setThumbnail(origEmbed.data.thumbnail.url);
-
         
         queueChan.send( { embeds: [newEmbed]} )
-          .then(message => { 
-            const gcs = ticketsGamiCard.get(verificationMessages.get(reaction.message));
+          .then(message => { // With 2-card auctions, allow 🔄 pic swaps
+            const gcs = ticketsGamiCard.get(auctioneerID);
+            saveGlobalID(gcs[0].globalID);
             if (gcs[2] === "Two") {
+              saveGlobalID(gcs[1].globalID);
               message.react('🔄'); 
-              queueImageURL.set(message, [0, gcs[0].imgURL, gcs[1].imgURL]);
+              const ps = new PicSwap(gcs[0].imgURL, gcs[0].getBorderColor(), gcs[1].imgURL, gcs[1].getBorderColor());
+              queueImageURL.set(message, ps);
             } 
-          }) .then(() => {
-            var auctioneerID = reaction.message.embeds[0].data.fields[0].value;
-            auctioneerID = auctioneerID.substring(auctioneerID.indexOf('@') + 1, auctioneerID.indexOf('>'));
+          }) .then(() => { // Clear from maps
             verificationMessages.delete(reaction.message);
             tickets.delete(auctioneerID);
             ticketsGamiCard.delete(auctioneerID); 
             reaction.message.delete(); 
-  
           });
         
         // Add to auction-handling     
         const aucHandlingChan = client.channels.cache.get(AUCTION_HANDLING_CHANNEL_ID);
-        origEmbed.data.color = 16711680; // yellow
+        origEmbed.data.color = 16711680; // red
         aucHandlingChan.send( { embeds: [origEmbed]} )
           .then(message => { message.react('🔒'); });
-
-        
-       
 
 
         // Decline ticket
       } else if(reaction.emoji.name === '❌'){
-        const dmUser = client.users.fetch(verificationMessages.get(reaction.message));
-        dmUser.send("Your ticket was denied.")
-        .then(() => {
-          var auctioneerID = reaction.message.embeds[0].data.fields[0].value;
-          auctioneerID = auctioneerID.substring(auctioneerID.indexOf('@') + 1, auctioneerID.indexOf('>'));
-          verificationMessages.delete(reaction.message);
-          tickets.delete(auctioneerID);
-          ticketsGamiCard.delete(auctioneerID); 
-          reaction.message.delete(); 
-
-        });
-        
-          
+        client.users.cache.get(auctioneerID).send("Your ticket was rejected.")
+          .then(() => {
+            verificationMessages.delete(reaction.message);
+            tickets.delete(auctioneerID);
+            ticketsGamiCard.delete(auctioneerID); 
+            reaction.message.delete(); 
+          });
+            
       } 
-
-      // Delete tickets, cards etc...
-      if (reaction.emoji.name === '✅' || reaction.emoji.name === '❌') {
-        //console.log(reaction.message.embeds[0].data.fields[0].value);
-        
-        // var auctioneerID = reaction.message.embeds[0].data.fields[0].value;
-        // auctioneerID = auctioneerID.substring(auctioneerID.indexOf('@') + 1, auctioneerID.indexOf('>'));
-        // verificationMessages.delete(reaction.message);
-        // tickets.delete(auctioneerID);
-        // ticketsGamiCard.delete(auctioneerID); 
-        // reaction.message.delete(); 
- 
-      }
 
     } catch(e){
       console.error(e);
@@ -805,62 +793,72 @@ client.on('messageReactionAdd', /*async*/ (reaction, user) =>{
 
   // Auction Handling Channel: Check for when handler claims auction
   if (reaction.message.channel.id == AUCTION_HANDLING_CHANNEL_ID &&  reaction.emoji.name === '🔒') {
-    if(handlingAuctionLimit.has(user.id) && handlingAuctionLimit.get(user.id) == 10){
-      const closeMsg = new Date(new Date().getTime() + 5 * second); 
-      reaction.message.channel.send("You are handling too many auctions!").then(sentMsg =>{
-        schedule.scheduleJob(closeMsg, () => {
-          sentMsg.delete();
-        });
-      });
-    }
-    else{
-      if(!handlingAuctionLimit.has(user.id))
-        handlingAuctionLimit.set(user.id, 1);
-      else
-        handlingAuctionLimit.set(user.id, handlingAuctionLimit.get(user.id) + 1);
+    try{
 
-      const origEmbed = reaction.message.embeds[0];
-      const newEmbed = new EmbedBuilder()
-        .addFields(
-          {name: ' ', value: origEmbed.data.fields[0].value},
-          {name: ' ', value: origEmbed.data.fields[1].value},
-          {name: ' ', value: origEmbed.data.fields[2].value + ' '},
-          {name: ' ', value: 'Handler: <@' + user.id + '>'}
-        )
-        .setColor(0xFFFF00)
-        .setTimestamp()
-        .setFooter({text: origEmbed.data.footer.text});
-      reaction.message.edit( { embeds: [newEmbed]} )
-        .then(message => {
-          message.reactions.removeAll()
-          .then(msg => {msg.react('✅'); });
-          
-      });
+      // Stop handler from claiming too many auctions
+      if(handlingAuctionLimit.has(user.id) && handlingAuctionLimit.get(user.id) == 10){
+        const closeMsg = new Date(new Date().getTime() + 5 * second); 
+        reaction.message.channel.send("You are handling too many auctions!").then(sentMsg =>{
+          schedule.scheduleJob(closeMsg, () => {
+            sentMsg.delete();
+          });
+        });
+      
+        // Let handler claim auction / display handler  in embed
+      } else{ 
+        if(!handlingAuctionLimit.has(user.id))
+          handlingAuctionLimit.set(user.id, 1);
+        else
+          handlingAuctionLimit.set(user.id, handlingAuctionLimit.get(user.id) + 1);
+
+        const origEmbed = reaction.message.embeds[0];
+        const newEmbed = new EmbedBuilder()
+          .addFields(
+            {name: ' ', value: origEmbed.data.fields[0].value},
+            {name: ' ', value: origEmbed.data.fields[1].value},
+            {name: ' ', value: origEmbed.data.fields[2].value + ' '},
+            {name: ' ', value: 'Handler: <@' + user.id + '>'}
+          )
+          .setColor(0xFFFF00) // yellow
+          .setTimestamp()
+          .setFooter({text: origEmbed.data.footer.text});
+        reaction.message.edit( { embeds: [newEmbed]} )
+          .then(message => {
+            message.reactions.removeAll()
+            .then(msg => {msg.react('✅'); });
+            
+        });
+      }
+    } catch(e) {
+      console.error(e);
     }
     
   }
 
     // Auction Handling Channel: Check for when handler puts up an auction.
   if (reaction.message.channel.id == AUCTION_HANDLING_CHANNEL_ID &&  reaction.emoji.name === '✅') {
-    if(handlingAuctionLimit.get(user.id) == 0){}
-    else
-    handlingAuctionLimit.set(user.id, handlingAuctionLimit.get(user.id) - 1);
+    try {
+      if(handlingAuctionLimit.get(user.id) > 0)
+        handlingAuctionLimit.set(user.id, handlingAuctionLimit.get(user.id) - 1);
 
-    const origEmbed = reaction.message.embeds[0];
-    const newEmbed = new EmbedBuilder()
-      .setTitle('__**Completed**__')
-      .addFields(
-        {name: ' ', value: origEmbed.data.fields[0].value},
-        {name: ' ', value: origEmbed.data.fields[1].value},
-        {name: ' ', value: origEmbed.data.fields[2].value + ' '},
-        {name: ' ', value: '**Handler**: <@' + user.id + '>'}
-      )
-      .setColor(0x00FF00)
-      .setFooter({text: origEmbed.data.footer.text});
-    reaction.message.edit( { embeds: [newEmbed]} ) 
-      .then(message => {
-        message.reactions.removeAll();
-      });
+      const origEmbed = reaction.message.embeds[0];
+      const newEmbed = new EmbedBuilder()
+        .setTitle('__**Completed**__')
+        .addFields(
+          {name: ' ', value: origEmbed.data.fields[0].value},
+          {name: ' ', value: origEmbed.data.fields[1].value},
+          {name: ' ', value: origEmbed.data.fields[2].value + ' '},
+          {name: ' ', value: '**Handler**: <@' + user.id + '>'}
+        )
+        .setColor(0x00FF00)
+        .setFooter({text: origEmbed.data.footer.text});
+      reaction.message.edit( { embeds: [newEmbed]} ) 
+        .then(message => {
+          message.reactions.removeAll();
+        });
+    } catch(e) {
+      console.error(e);
+    }
 
 
   // Flip the picture in queue channel
@@ -870,18 +868,18 @@ client.on('messageReactionAdd', /*async*/ (reaction, user) =>{
       if(!queueImageURL.has(reaction.message))
         return;
 
-      var imgLinks = queueImageURL.get(reaction.message);
-      
+      const ps = queueImageURL.get(reaction.message);
+      const [imgURL, borderCol] = ps.flipPic();
+
       const origEmbed = reaction.message.embeds[0];
       const newEmbed = new EmbedBuilder()
         .addFields(
           {name: ' ', value: origEmbed.data.fields[0].value},
           {name: ' ', value: origEmbed.data.fields[1].value + ' '}
         )
-        .setColor(origEmbed.data.color)
-        .setThumbnail( (imgLinks[0] === 0)? imgLinks[2] : imgLinks[1]);
-      imgLinks[0] = (imgLinks[0] === 0)? 1 : 0;
-      
+        .setColor(borderCol)
+        .setThumbnail(imgURL);
+    
       reaction.message.edit( { embeds: [newEmbed]} )
 
     }catch(e){

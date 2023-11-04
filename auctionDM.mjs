@@ -219,9 +219,11 @@ export async function createAuctionDM(message, userID, SELECT_MENU_BUILDER_AUCTI
             if(error instanceof ChannelNotCached){
                 console.error(e + "\n");
                 console.error("createAuctionDM: Channel is deleted before auction could finish.");
+                return "Cancelled";
             }else{
                 response.delete();
                 await message.reply("Confirmation not received within 1 minute, cancelling.");
+                return "Cancelled";
             }
             
             return "Cancelled";
@@ -289,7 +291,7 @@ export async function DMConfirmation(message, userID, gc){
             } else if (dmPress.customId === 'No') {
                 response.delete();
                 await message.reply("What made you change your mind? Hmph!");
-                return "Zero";
+                return "Cancelled";
             }
         } catch (e) {
             if(error instanceof ChannelNotCached){
