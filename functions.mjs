@@ -1,6 +1,12 @@
 
 import { readFileSync, writeFileSync } from 'fs'; 
 import schedule from 'node-schedule';
+import fs from 'fs/promises';
+import path from 'path';
+import { EmbedBuilder } from 'discord.js';
+
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
 
 const day = 86400000;
 //parseAuctionMsg(auctionMess), fileToData(auctionTimesFile, channels, channelIDs), 
@@ -132,3 +138,31 @@ export function parseAuctionMsg(auctionMess){
   //   return origEmbed;
 
   // }
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const logFilePath = path.join(__dirname, 'gammaErrors.log');
+
+export async function writeToLog(message) {
+  try {
+    const timestamp = new Date().toISOString();
+    const logMessage = `[${timestamp}] ${message}\n`;
+
+    await fs.appendFile(logFilePath, logMessage);
+  } catch (error) {
+    console.error('Error writing to log file:', error);
+  }
+}
+// Usage example:
+// logger.log('Application started');
+// logger.error('An error occurred');
+
+export function lbEmbed(s1, s2){
+  var e = new EmbedBuilder()
+    .setTimestamp()
+    .addFields({name: 'Name', value: s1, inline: true})
+    .addFields({name: 'Auctions Won', value: s2, inline: true})
+    .setColor(0x40C7F4)
+    .setTitle('Auction Leaderboards');
+  return e;
+}

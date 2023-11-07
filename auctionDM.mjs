@@ -12,7 +12,6 @@ function pushNewMenuChoices(eventSelect, newOptionsArray){
     for(var i = newOptionsArray.length - 1; i > -1; i--){
         eventSelect.addOptions(newOptionsArray[i]);
     }
-
 }
 
 export function createSelectStringMenuAuc(newOptionsArray){
@@ -129,12 +128,12 @@ async function createAucDMMenu(message, userID, SELECT_MENU_BUILDER_AUCTIONS){
 
 
         const response = await message.reply({
-            content: 'What event is this card? The ticket expires in 60 seconds.',
+            content: 'What event is this card?',
             components: [row1, dmRow],
         });
 
         var selection = "NA";
-        const collector = response.createMessageComponentCollector({ time: 60_000 });
+        const collector = response.createMessageComponentCollector({ time: 180_000 });
 
         return new Promise((resolve, reject) => {
             collector.on('collect', async (i) => {
@@ -154,7 +153,10 @@ async function createAucDMMenu(message, userID, SELECT_MENU_BUILDER_AUCTIONS){
                     i.deferUpdate();
                 }
             });
-
+        }).catch(error => {
+            console.error('Error getting event: ', error);
+            response.delete();
+            return "Cancelled";
         });
 
     }catch(e){
@@ -199,14 +201,18 @@ export async function createAuctionDM(message, userID, SELECT_MENU_BUILDER_AUCTI
         const collectorFilter = i => i.user.id === userID;
 
         try {
-            const dmPress = await response.awaitMessageComponent({ filter: collectorFilter, time: 120_000 });
+            const dmPress = await response.awaitMessageComponent({ filter: collectorFilter, time: 180_000 });
 
             if (dmPress.customId === 'Yes') {
                 response.delete();
                 
                 return new Promise((resolve, reject) => {
                     resolve(createAucDMMenu(message, userID, SELECT_MENU_BUILDER_AUCTIONS));
-
+                }).catch(error => {
+                    console.error('Error getting confirmation: ', error);
+                    response.delete();
+                    message.reply("Error: please let <@238454480385867776> know about this error.");
+                    return "Cancelled";
                 });
 
                 
@@ -278,7 +284,7 @@ export async function DMConfirmation(message, userID, gc){
         const collectorFilter = i => i.user.id === userID;
 
         try {
-            const dmPress = await response.awaitMessageComponent({ filter: collectorFilter, time: 60_000 });
+            const dmPress = await response.awaitMessageComponent({ filter: collectorFilter, time: 180_000 });
 
             if (dmPress.customId === 'addItem') {
                 response.delete();
@@ -348,7 +354,7 @@ export async function FinalConfirmation(message, userID, gc2){
         const collectorFilter = i => i.user.id === userID;
 
         try {
-            const dmPress = await response.awaitMessageComponent({ filter: collectorFilter, time: 60_000 });
+            const dmPress = await response.awaitMessageComponent({ filter: collectorFilter, time: 180_000 });
 
             if (dmPress.customId === 'Yes') {
                 response.delete();

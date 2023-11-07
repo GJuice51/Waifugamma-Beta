@@ -22,21 +22,17 @@ import { channel } from 'node:diagnostics_channel';
 import { get } from 'node:http';
 import { readFileSync, writeFileSync, promises as fsPromises } from 'fs'; // new
 import { updateWin, getTop } from './spreadsheetMJS.mjs';
-import { checkLastAuction, saveGlobalID, fileToData, auctionToFile, displayTimers, checkCharacter, getInfo} from './functions.mjs'; // new
+import { checkLastAuction, saveGlobalID, fileToData, auctionToFile, displayTimers, checkCharacter, getInfo, writeToLog, lbEmbed} from './functions.mjs'; // new
 import { ChannelOBJ, GamiCard, PicSwap, QueueImgs} from './objects.mjs'; // new
 import { createAuctionDM, DMConfirmation, FinalConfirmation, createSelectStringMenuAuc } from './auctionDM.mjs';
 //import { getDefaultAutoSelectFamilyAttemptTimeout } from 'node:net';
 const rest = new REST({ version: '10'}).setToken(TOKEN);
 
-function lbEmbed(s1, s2){
-  var e = new EmbedBuilder()
-    .setTimestamp()
-    .addFields({name: 'Name', value: s1, inline: true})
-    .addFields({name: 'Auctions Won', value: s2, inline: true})
-    .setColor(0x40C7F4)
-    .setTitle('Auction Leaderboards');
-  return e;
-}
+
+const logger = {
+  log: async (message) => writeToLog(message),
+  error: async (errorMessage) => writeToLog(`[ERROR] ${errorMessage}`),
+};
 
 
 // Discord stuff
@@ -58,15 +54,17 @@ const auctionTimesFile = "auctionTimes.txt"
 const day = 86400000;
 const second = 1000;
 const AUCTION_COOLDOWN = 5 * second;//37 * day;
-const AUCTION_LENGTH =  15 * second;// day
+const AUCTION_LENGTH =  10*second;// day
 
 
 const GUILD_ID = '1013859678201069568'; 
 const TICKET_CAT_ID = '1167881102938091560';
 const QUEUE_CHANNEL_ID = '1038245842122977360';
 const AUCTION_HANDLING_CHANNEL_ID = '1168753393574088774';
+const AUCTION_CHAT_ID = '1117994809706152037';
 const HANDLER_CHAT_CHANNEL_ID = '1033815697161212055';
 const AUCTION_VERIFICATION_ID = '1168698674298245231';
+const AUCTION_ROLES = ['1035228549172445214', '892901214046535690', '1171253207733899364'];
 const GJUICE_ID = '230114915413655552';
 const AGUA_ID = '238454480385867776';
 //const HANDLER_ID = '892866809919836172'; // probably doesnt work
@@ -134,7 +132,7 @@ function createTicket(message) {
       .setTitle('Auction Ticket')
       .setThumbnail('https://cdn.discordapp.com/attachments/1033815697161212055/1168700893575774239/latest.png?ex=6552b886&is=65404386&hm=39fd388d3b02354183b1d74062e6d1491c649f9de7b6f961dab1f23ef9cb9957&')
       .addFields({name:' ', value: 'Created by <@' + message.author.id + '>'},
-        {name: 'To get started, please __view__ the card(s) you want to auction.', value: ' '},
+        //{name: 'To get started, please __view__ the card(s) you want to auction.', value: ' '},
         {name: '__Rules__', value: ' '},
         {name: ' ', value: '**1.** You can auction either **1** or **2** cards.'},
         {name: ' ', value: '**2.** You can only auction characters with at least 30 wishlist.'},
@@ -147,6 +145,10 @@ function createTicket(message) {
       .setColor(0x4CEB34);
     channel.send({ embeds: [resp2]});
 
+    const resp3 = new EmbedBuilder()
+      .addFields({name: 'To get started, please __view__ the card(s) you want to auction.', value: ' '})
+      .setColor(0x4CEB34);
+    channel.send({ embeds: [resp3]});
 
     // Close the channel if inactive
     const closeTime = new Date(new Date().getTime() + 180 * second); 
@@ -190,14 +192,14 @@ function sendToVerification(gcs, numChar, userID){
   const verEmbed = new EmbedBuilder()
       .setTimestamp()
       .addFields(
-        {name: ' ', value: '**Auctioneer**: <@' + userID + '>'},
+        //{name: ' ', value: '**Auctioneer**: <@' + userID + '>'}, NEW EDIT
         {name: ' ', value: 'Item 1: ' + gcs[0].toString()},
         {name: ' ', value: (numChar === "Two")? '\nItem 2: '+ gcs[1].toString() : ' '})
       .setColor(gcs[0].getBorderColor()) 
       .setFooter({text: 'Last ticket: ' + lastAuc})
       .setThumbnail(gcs[0].imgURL);
 
-  aucVerChannel.send({ embeds: [verEmbed]})
+  aucVerChannel.send({ content: '**Auctioneer**: <@' + userID + '>' , embeds: [verEmbed]})
     .then(message => {
         message.react('✅');
         message.react('❌');
@@ -205,7 +207,13 @@ function sendToVerification(gcs, numChar, userID){
     });
 }
 
-
+function containsAuctionRoles(str){
+  for (let i = 0; i <= AUCTION_ROLES.length; i++){
+   if (str.includes('<@&' + AUCTION_ROLES[i] + '>'))
+       return true;
+  }
+  return false;
+}
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////
 //                                              Main
@@ -219,8 +227,14 @@ client.on('ready', () => {
 
 client.on('messageCreate', async message => {
 
+  // Ignore bot reactions
+  if (message == null || message.author == null || (message.guild && (message.channel == null || message.channel.parent == null))) {
+    console.error("1.Something was null...");
+    return;
+  }
+
   // Add a new auction
-  if(((message.content.includes('<@&1035228549172445214>')) || message.content.includes('<@&892901214046535690>')) && message.content.includes('Auctioneer') && message.content.toLowerCase().includes('item 1')){
+  if(containsAuctionRoles(message.content) && message.content.includes('Auctioneer') && message.content.toLowerCase().includes('item 1')){ 
     const getchannel = await client.channels.fetch(message.channel.id);
     
     const channelString = '' + getchannel;
@@ -281,9 +295,7 @@ client.on('messageCreate', async message => {
     getchannel.send({ embeds: [embedAuction]});
       
     // Display leaderboard of bidder winners
-  } else if(message.content.startsWith('!lb') && await client.channels.fetch(message.channel.id) == "1117994809706152037"){
-  const getchannel = await client.channels.fetch(message.channel.id);
-  
+  } else if(message.content.startsWith('!lb') && message.channel.id == AUCTION_CHAT_ID){
   getTop(50).then(async function(board){
     var tens = 10;
     var lbStringIDs = '';
@@ -519,6 +531,9 @@ client.on('messageCreate', async message => {
               
               var charEvent = await new Promise((resolve, reject) => {
                 resolve(createAuctionDM(message, userID, SELECT_MENU_BUILDER_AUCTIONS));
+              }).catch(error => {
+                console.error('Error closing channel: ', error);
+                ticketsGamiCard.set(userID, ["None", "None", "Zero"]);
               });
               //Step 3a: Cancel.
               if (charEvent === "Cancelled"){
@@ -530,6 +545,9 @@ client.on('messageCreate', async message => {
                 //Step 4. Asks for confirmation: Submit 1 item, type in the 2nd time, or cancel.
                 ticketsGamiCard.get(userID)[2] = await new Promise((resolve, reject) => {
                   resolve(DMConfirmation(message, userID, ticketsGamiCard.get(userID)[0] ));
+                }).catch(error => {
+                  console.error('Error closing channel: ', error);
+                  ticketsGamiCard.set(userID, ["None", "None", "Zero"]);
                 });
 
                 if(ticketsGamiCard.get(userID)[2] == "More"){
@@ -540,9 +558,16 @@ client.on('messageCreate', async message => {
                   //Starts the queuing process
                   sendToVerification(ticketsGamiCard.get(userID), "One", userID);
                   const closeTime = new Date(new Date().getTime() + 5 * second); 
-                  schedule.scheduleJob(closeTime, () => {
-                    message.channel.delete();
+                  
+                  try{
+                    schedule.scheduleJob(closeTime, () => {
+                      if(message.channel != null)
+                      message.channel.delete();
                   });
+                  }catch(error){
+                    console.error("Error closing channel after scheduling job: ", error);
+                  }
+                
                 //Step 5c. Cancel.
                 }else{
                   ticketsGamiCard.set(userID, ["None", "None", "Zero"]);
@@ -565,6 +590,9 @@ client.on('messageCreate', async message => {
                 ticketsGamiCard.get(userID)[1] = new GamiCard(name, waifuID, rarity, "none", imgURL, globalID);
                 var charEvent = await new Promise((resolve, reject) => {
                   resolve(createAuctionDM(message, userID, SELECT_MENU_BUILDER_AUCTIONS));
+                }).catch(error => {
+                  console.error('Error closing channel: ', error);
+                  ticketsGamiCard.set(userID, ["None", "None", "Zero"]);
                 });
                 // Step 3a: Cancel.
                 if (charEvent === "Cancelled"){
@@ -575,14 +603,25 @@ client.on('messageCreate', async message => {
                   //Step 4. Asks for confirmation.
                   ticketsGamiCard.get(userID)[2] = await new Promise((resolve, reject) => {
                     resolve(FinalConfirmation(message, userID, ticketsGamiCard.get(userID)));
+                  }).catch(error => {
+                    console.error('Error closing channel: ', error);
+                    ticketsGamiCard.set(userID, ["None", "None", "Zero"]);
                   });
                   // Step 5a: Starts queuing process for 2 items.
                   if(ticketsGamiCard.get(userID)[2] == "Two"){
                     sendToVerification(ticketsGamiCard.get(userID), "Two", userID);
                     const closeTime = new Date(new Date().getTime() + 5 * second); 
-                    schedule.scheduleJob(closeTime, () => {
-                      message.channel.delete();
-                    });
+
+                    try{
+                      schedule.scheduleJob(closeTime, () => {
+                        if(message.channel != null)
+                          message.channel.delete();
+                      });
+                    }catch(error){
+                      console.error("Error closing channel after scheduling job: ", error);
+                    }
+                    
+
                     // Step 5b: Cancel.
                   }else{
                     ticketsGamiCard.set(userID, ["None", "None", "Zero"]);
@@ -725,12 +764,19 @@ client.on('messageCreate', async message => {
 }); 
  
 
-
+////////////////////////////////////////////////////////////////////////////////////////////////////////////
+//                                              Reactions
+////////////////////////////////////////////////////////////////////////////////////////////////////////////
 client.on('messageReactionAdd', (reaction, user) =>{
+
   // Ignore bot reactions
-  if ( user.id === client.user.id) {
+
+  if ( user == null || reaction == null || user.id === client.user.id || reaction.message == null || reaction.message.channel == null) {
+    //if (user.id !== client.user.id)
+     // console.error("2.Something was null...");
     return;
   }
+
   // Handle reactions in verification channel
   if (reaction.message.channel.id === AUCTION_VERIFICATION_ID && verificationMessages.has(reaction.message)) {
     try {
@@ -743,9 +789,9 @@ client.on('messageReactionAdd', (reaction, user) =>{
         const origEmbed = reaction.message.embeds[0];
         const queueChan = client.channels.cache.get(QUEUE_CHANNEL_ID);
         const newEmbed = new EmbedBuilder()
-          .addFields(
-            {name: ' ', value: origEmbed.data.fields[1].value},
-            {name: ' ', value: origEmbed.data.fields[2].value + ' '}
+          .addFields( //NEW EDIT
+            {name: ' ', value: origEmbed.data.fields[0].value},
+            {name: ' ', value: origEmbed.data.fields[1].value + ' '}
           )
           .setColor(origEmbed.data.color)
           .setThumbnail(origEmbed.data.thumbnail.url);
@@ -770,7 +816,7 @@ client.on('messageReactionAdd', (reaction, user) =>{
         // Add to auction-handling     
         const aucHandlingChan = client.channels.cache.get(AUCTION_HANDLING_CHANNEL_ID);
         origEmbed.data.color = 16711680; // red
-        aucHandlingChan.send( { embeds: [origEmbed]} )
+        aucHandlingChan.send( { content: reaction.message.content, embeds: [origEmbed]} ) //NEW EDIT
           .then(message => { message.react('🔒'); });
 
 
@@ -814,9 +860,9 @@ client.on('messageReactionAdd', (reaction, user) =>{
         const origEmbed = reaction.message.embeds[0];
         const newEmbed = new EmbedBuilder()
           .addFields(
+            //{name: ' ', value: origEmbed.data.fields[0].value}, //NEW EDIT
             {name: ' ', value: origEmbed.data.fields[0].value},
-            {name: ' ', value: origEmbed.data.fields[1].value},
-            {name: ' ', value: origEmbed.data.fields[2].value + ' '},
+            {name: ' ', value: origEmbed.data.fields[1].value + ' '},
             {name: ' ', value: 'Handler: <@' + user.id + '>'}
           )
           .setColor(0xFFFF00) // yellow
@@ -845,9 +891,9 @@ client.on('messageReactionAdd', (reaction, user) =>{
       const newEmbed = new EmbedBuilder()
         .setTitle('__**Completed**__')
         .addFields(
+          //{name: ' ', value: origEmbed.data.fields[0].value}, NEW EDIT
           {name: ' ', value: origEmbed.data.fields[0].value},
-          {name: ' ', value: origEmbed.data.fields[1].value},
-          {name: ' ', value: origEmbed.data.fields[2].value + ' '},
+          {name: ' ', value: origEmbed.data.fields[1].value + ' '},
           {name: ' ', value: '**Handler**: <@' + user.id + '>'}
         )
         .setColor(0x00FF00)
@@ -887,15 +933,24 @@ client.on('messageReactionAdd', (reaction, user) =>{
     }
   }
   
-
   
+});
+
+
+process.on('uncaughtException', (error) => {
+  writeToLog(`Uncaught Exception: ${error.stack || error.message}`);
+  //console.error(`Uncaught Exception: ${error.stack || error.message}`);
+  //process.exit(1); // Exit the process to prevent it from continuing with a potentially unstable state. Comment this when pushed into production.
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  writeToLog(`Unhandled Promise Rejection: ${reason}`);
+  //console.error(`Unhandled Promise Rejection: ${reason}`);
 });
 
 
 //client.login(client.config.token);
 client.login(TOKEN);
-
-
 
 
 // git init
