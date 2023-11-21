@@ -5,7 +5,7 @@ const day = 86400000;
 const COL_OMEGA = 12186367;
 const COL_EVENT = 15293728;
 const COL_ZETA = 16076006;
-const MAX_QUEUE_LENGTH = 100;
+
 
 export class ChannelOBJ {
     constructor() {
@@ -74,15 +74,16 @@ export class PicSwap {
     }
 }
 
-export class QueueImgs {
+export class LimitedMap {
     
-    constructor(){
+    constructor(limit){
         this.m = new Map();
         this.size = 0;
+        this.limit = limit;
     }
 
     set(a,b){
-        if (this.m.size >= MAX_QUEUE_LENGTH)
+        if (this.m.size >= this.limit)
             this.m.delete(this.m.keys().next().value);
         this.m.set(a,b);
         this.size = this.m.size;
@@ -92,5 +93,24 @@ export class QueueImgs {
     }
     has(a){
         return this.m.has(a);
+    }
+    delete(a){
+        this.m.delete(a);
+    }
+    clear(){
+        this.m.clear();
+    }
+    top(max = 1){ 
+        var handlings = [];
+        var count = 0;
+        for (let [queueMsgID, handlerID] of this.m) {
+            handlings.push([queueMsgID, handlerID]);
+            count += 1;
+            if (count == max)
+                break;
+        }
+        if (handlings.length == 0)
+            handlings.push([null, null]);
+        return handlings;
     }
 }

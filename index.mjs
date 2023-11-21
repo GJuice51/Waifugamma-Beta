@@ -6,6 +6,14 @@
 // !close
 // !addevent
 // !deleteevent
+// !syncqueue
+
+// THINGS TO CHANGE BEFORE SENDING TO PRODUCTION
+// channelIDs - list of auction channels
+// ALL CHANNEL IDS 
+// AUCTION_ROLES
+// uncomment HANDLERIDS in createticket()
+// AUCTION_COOLDOWN, AUCTION_LENGTH
 
 import { config } from 'dotenv';
 config();
@@ -23,7 +31,7 @@ import { get } from 'node:http';
 import { readFileSync, writeFileSync, promises as fsPromises } from 'fs'; // new
 import { updateWin, getTop } from './spreadsheetMJS.mjs';
 import { checkLastAuction, saveGlobalID, fileToData, auctionToFile, displayTimers, checkCharacter, getInfo, writeToLog, lbEmbed} from './functions.mjs'; // new
-import { ChannelOBJ, GamiCard, PicSwap, QueueImgs} from './objects.mjs'; // new
+import { ChannelOBJ, GamiCard, PicSwap, LimitedMap} from './objects.mjs'; // new
 import { createAuctionDM, DMConfirmation, FinalConfirmation, createSelectStringMenuAuc } from './auctionDM.mjs';
 //import { getDefaultAutoSelectFamilyAttemptTimeout } from 'node:net';
 const rest = new REST({ version: '10'}).setToken(TOKEN);
@@ -33,7 +41,6 @@ const logger = {
   log: async (message) => writeToLog(message),
   error: async (errorMessage) => writeToLog(`[ERROR] ${errorMessage}`),
 };
-
 
 // Discord stuff
 const client = new Client({
@@ -53,7 +60,7 @@ const auctionTimesFile = "auctionTimes.txt"
 
 const day = 86400000;
 const second = 1000;
-const AUCTION_COOLDOWN = 5 * second;//37 * day;
+const AUCTION_COOLDOWN = 5 * second;//30 * day;
 const AUCTION_LENGTH =  10*second;// day
 
 
@@ -67,7 +74,6 @@ const AUCTION_VERIFICATION_ID = '1168698674298245231';
 const AUCTION_ROLES = ['1035228549172445214', '892901214046535690', '1171253207733899364'];
 const GJUICE_ID = '230114915413655552';
 const AGUA_ID = '238454480385867776';
-//const HANDLER_ID = '892866809919836172'; // probably doesnt work
 
 var eventOptionsArray = [];
 var SELECT_MENU_BUILDER_AUCTIONS = createSelectStringMenuAuc(eventOptionsArray);
@@ -76,9 +82,8 @@ var tickets = new Map(); // auctioneerID -> channelID
 var ticketsGamiCard = new Map(); // auctioneerID -> [GamiCard, Gamicard, str]
 var lastAuctioned = new Map(); // auctioneerID -> Date
 var handlingAuctionLimit = new Map(); // handlerID -> count
-var queueImageURL = new QueueImgs(); // QueueMessage -> PicSwap
-
-
+var queueImageURL = new LimitedMap(100); // QueueMessage -> PicSwap
+var handlerClaims = new LimitedMap(100); // queueMessageID -> handlerID
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////
 //                                       Useful Functions
@@ -215,13 +220,60 @@ function containsAuctionRoles(str){
   return false;
 }
 
+// Load auction handling and queue messages
+async function reloadMessages(){
+  handlerClaims.clear();
+
+  const handlingCH = await client.channels.fetch(AUCTION_HANDLING_CHANNEL_ID);
+  const queueChan = await client.channels.fetch(QUEUE_CHANNEL_ID);
+  const handlingMessages = await handlingCH.messages.fetch({ limit: 100 });
+  await queueChan.messages.fetch({ limit: 100 })
+  .then(queueMessages => {
+    var tempqueue = [];
+    for (let [qid, qmessage] of queueMessages) {
+      if (qmessage.embeds.length == 0)
+        continue;
+      
+      var oldMessage = true; // delete this system later?
+      for (let [hid, hmessage] of handlingMessages) {
+        if (hmessage.embeds.length == 0 || hmessage.embeds[0].data.fields == null)
+          continue;
+
+        if (hmessage.embeds[0].data.fields[0].value.includes(qid)){
+          oldMessage = false;
+          const idx = hmessage.content.indexOf("Handler: ");
+          if (idx > 0){ // load handler to ping later
+            var handlerID = hmessage.content.substring(idx + 11);
+            handlerID = handlerID.substring(0, handlerID.length - 1);
+            tempqueue.push([qid, handlerID]);
+          }
+          //break;
+        }
+      }
+
+      // If old message delete later
+      if (oldMessage)
+        tempqueue.push([qid, null]);
+    }
+
+    // Add claims in reverse order
+    tempqueue.reverse();
+    for (let [qid, handlerID] of tempqueue) 
+      handlerClaims.set(qid, handlerID);
+    
+  })
+}
 /////////////////////////////////////////////////////////////////////////////////////////////////////
 //                                              Main
 /////////////////////////////////////////////////////////////////////////////////////////////////////
-client.on('ready', () => {
+client.on('ready', async () => {
   // Load past auctions
   fileToData(auctionTimesFile, channels, channelIDs);
-  console.log('The bot is ready.');
+
+  // Reload handling messages
+  reloadMessages()
+  .then(() => console.log('The bot is ready.'))
+  .catch(err => console.error(err));
 })
 
 
@@ -229,7 +281,7 @@ client.on('messageCreate', async message => {
 
   // Ignore bot reactions
   if (message == null || message.author == null || (message.guild && (message.channel == null || message.channel.parent == null))) {
-    console.error("1.Something was null...");
+    console.error("1. Something was null...");
     return;
   }
 
@@ -259,6 +311,14 @@ client.on('messageCreate', async message => {
       message.reply("Waiting...");
       privchannel.send('<@' + message.author.id + '>, <#' + getchannel + '> is done.');
       auctionToFile(auctionTimesFile, channels, channelIDs);
+
+      const [queueMsgID, nextHandlerID] = handlerClaims.top()[0]; // ping the next handler
+      if (nextHandlerID == null){
+        handlerClaims.delete(queueMsgID);
+        return;
+      }
+      privchannel.send("<#" + QUEUE_CHANNEL_ID + ">: <@" + nextHandlerID + ">");
+      //handlerClaims.delete(queueMsgID);
     });
 
     // Display open channels and timers
@@ -469,7 +529,6 @@ client.on('messageCreate', async message => {
       updateWin(id1, char1);
     }
 
-    getchannel.send('' + id1 + ' ' + char1 + ' ' + id2 + ' ' + char2);
        
     //////////////////////////////////////////////////////////////////////////////////////////////
     //                              Auction bot ticket system 
@@ -730,8 +789,12 @@ client.on('messageCreate', async message => {
       message.reply("Something went wrong...");
     }
 
-    // COMMANDS BELOW USED FOR TESTING
-   } //else if (message.content.startsWith('!embed')) {
+   } else if (message.content.startsWith('!syncqueue') && message.channel.id === HANDLER_CHAT_CHANNEL_ID) {
+    reloadMessages()
+    .then(() => message.reply("Synced up queue channel!"));
+   }
+   // COMMANDS BELOW USED FOR TESTING
+   //else if (message.content.startsWith('!embed')) {
   //   // Add to auction-handling
   //   const aucHandlingChan = client.channels.cache.get(AUCTION_HANDLING_CHANNEL_ID);
   //   const newEmbed = new EmbedBuilder()
@@ -758,9 +821,20 @@ client.on('messageCreate', async message => {
     });
     console.log('lastAuctioned: ' + lastAuctioned.size);
     console.log('queueImageURL: ' + queueImageURL.size);
+    console.log(handlerClaims);
     console.log('-----------------------------');
     
   }
+  // else if (message.content.startsWith('?purgequeue')) {
+  //   const queueChan = await client.channels.fetch(QUEUE_CHANNEL_ID);
+  //   await queueChan.messages.fetch()
+  //   .then(messages => {
+  //     for (let [key, value] of messages) {
+  //       value.delete();
+  //     }
+  //   })
+  // }
+
 }); 
  
 
@@ -770,7 +844,6 @@ client.on('messageCreate', async message => {
 client.on('messageReactionAdd', (reaction, user) =>{
 
   // Ignore bot reactions
-
   if ( user == null || reaction == null || user.id === client.user.id || reaction.message == null || reaction.message.channel == null) {
     //if (user.id !== client.user.id)
      // console.error("2.Something was null...");
@@ -789,7 +862,7 @@ client.on('messageReactionAdd', (reaction, user) =>{
         const origEmbed = reaction.message.embeds[0];
         const queueChan = client.channels.cache.get(QUEUE_CHANNEL_ID);
         const newEmbed = new EmbedBuilder()
-          .addFields( //NEW EDIT
+          .addFields( 
             {name: ' ', value: origEmbed.data.fields[0].value},
             {name: ' ', value: origEmbed.data.fields[1].value + ' '}
           )
@@ -806,18 +879,29 @@ client.on('messageReactionAdd', (reaction, user) =>{
               const ps = new PicSwap(gcs[0].imgURL, gcs[0].getBorderColor(), gcs[1].imgURL, gcs[1].getBorderColor());
               queueImageURL.set(message, ps);
             } 
-          }) .then(() => { // Clear from maps
+
+            addToHandling(message.id);
+        
+          }).then(() => { // Clear from maps
             verificationMessages.delete(reaction.message);
             tickets.delete(auctioneerID);
             ticketsGamiCard.delete(auctioneerID); 
             reaction.message.delete(); 
           });
         
-        // Add to auction-handling     
-        const aucHandlingChan = client.channels.cache.get(AUCTION_HANDLING_CHANNEL_ID);
-        origEmbed.data.color = 16711680; // red
-        aucHandlingChan.send( { content: reaction.message.content, embeds: [origEmbed]} ) //NEW EDIT
+        // Add to auction-handling   
+        function addToHandling(queueID){  
+          const aucHandlingChan = client.channels.cache.get(AUCTION_HANDLING_CHANNEL_ID);
+          const embedMarker = new EmbedBuilder()
+            .addFields( {name: ' ', value: 'https://discord.com/channels/' + GUILD_ID + '/' + QUEUE_CHANNEL_ID + '/' + queueID })
+            .setColor(16711680);// red
+          aucHandlingChan.send({ 
+            embeds: [embedMarker],
+            content: reaction.message.content + '\n' 
+              + origEmbed.data.fields[0].value + '\n' + origEmbed.data.fields[1].value,   
+          }) //NEW EDIT
           .then(message => { message.react('🔒'); });
+        }
 
 
         // Decline ticket
@@ -838,7 +922,7 @@ client.on('messageReactionAdd', (reaction, user) =>{
   }
 
   // Auction Handling Channel: Check for when handler claims auction
-  if (reaction.message.channel.id == AUCTION_HANDLING_CHANNEL_ID &&  reaction.emoji.name === '🔒') {
+  if (reaction.message.channel.id == AUCTION_HANDLING_CHANNEL_ID && reaction.emoji.name === '🔒') {
     try{
 
       // Stop handler from claiming too many auctions
@@ -858,22 +942,27 @@ client.on('messageReactionAdd', (reaction, user) =>{
           handlingAuctionLimit.set(user.id, handlingAuctionLimit.get(user.id) + 1);
 
         const origEmbed = reaction.message.embeds[0];
-        const newEmbed = new EmbedBuilder()
-          .addFields(
-            //{name: ' ', value: origEmbed.data.fields[0].value}, //NEW EDIT
-            {name: ' ', value: origEmbed.data.fields[0].value},
-            {name: ' ', value: origEmbed.data.fields[1].value + ' '},
-            {name: ' ', value: 'Handler: <@' + user.id + '>'}
-          )
-          .setColor(0xFFFF00) // yellow
-          .setTimestamp()
-          .setFooter({text: origEmbed.data.footer.text});
-        reaction.message.edit( { embeds: [newEmbed]} )
-          .then(message => {
-            message.reactions.removeAll()
-            .then(msg => {msg.react('✅'); });
-            
+        origEmbed.data.color = 0xFFFF00; // yellow
+        var newContent = reaction.message.content;
+        
+        newContent += (reaction.message.content.indexOf("Handler:") == -1) ? ('\nHandler: <@' + user.id + '>') : " ";
+        reaction.message.edit( { 
+          embeds: [origEmbed],
+          content: newContent 
+        })
+        .then(message => {
+          message.reactions.removeAll()
+            .then(msg => msg.react('✅') );         
         });
+
+        // Mark queueMessage with handlerID
+        var queueMsgID = origEmbed.data.fields[0].value;
+        queueMsgID = queueMsgID.substring(queueMsgID.lastIndexOf('/') + 1);
+        const QueueChan = client.channels.cache.get(QUEUE_CHANNEL_ID);
+        QueueChan.messages.fetch(queueMsgID)
+        .then(message => handlerClaims.set(message.id, user.id))
+        .catch(console.error);
+
       }
     } catch(e) {
       console.error(e);
@@ -884,21 +973,12 @@ client.on('messageReactionAdd', (reaction, user) =>{
     // Auction Handling Channel: Check for when handler puts up an auction.
   if (reaction.message.channel.id == AUCTION_HANDLING_CHANNEL_ID &&  reaction.emoji.name === '✅') {
     try {
-      if(handlingAuctionLimit.get(user.id) > 0)
+      if(handlingAuctionLimit.has(user.id) && handlingAuctionLimit.get(user.id) > 0)
         handlingAuctionLimit.set(user.id, handlingAuctionLimit.get(user.id) - 1);
 
       const origEmbed = reaction.message.embeds[0];
-      const newEmbed = new EmbedBuilder()
-        .setTitle('__**Completed**__')
-        .addFields(
-          //{name: ' ', value: origEmbed.data.fields[0].value}, NEW EDIT
-          {name: ' ', value: origEmbed.data.fields[0].value},
-          {name: ' ', value: origEmbed.data.fields[1].value + ' '},
-          {name: ' ', value: '**Handler**: <@' + user.id + '>'}
-        )
-        .setColor(0x00FF00)
-        .setFooter({text: origEmbed.data.footer.text});
-      reaction.message.edit( { embeds: [newEmbed]} ) 
+      origEmbed.data.color = 0x00FF00; // yellow
+      reaction.message.edit( { embeds: [origEmbed]} ) 
         .then(message => {
           message.reactions.removeAll();
         });
@@ -936,16 +1016,25 @@ client.on('messageReactionAdd', (reaction, user) =>{
   
 });
 
+client.on('messageDelete', async message => {
+
+  // check to see if we are in queue channel
+  if(message.channel.id == QUEUE_CHANNEL_ID){
+    handlerClaims.delete(message.id);
+  }
+});
+
+
 
 process.on('uncaughtException', (error) => {
   writeToLog(`Uncaught Exception: ${error.stack || error.message}`);
-  //console.error(`Uncaught Exception: ${error.stack || error.message}`);
+  console.error(`Uncaught Exception: ${error.stack || error.message}`);
   //process.exit(1); // Exit the process to prevent it from continuing with a potentially unstable state. Comment this when pushed into production.
 });
 
 process.on('unhandledRejection', (reason, promise) => {
   writeToLog(`Unhandled Promise Rejection: ${reason}`);
-  //console.error(`Unhandled Promise Rejection: ${reason}`);
+  console.error(`Unhandled Promise Rejection: ${reason}`);
 });
 
 
