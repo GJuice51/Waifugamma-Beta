@@ -7,6 +7,11 @@
 // !addevent
 // !deleteevent
 // !syncqueue
+// !ban
+// !unban
+// !warn
+// !removewarning
+// !auctionlength
 
 // THINGS TO CHANGE BEFORE SENDING TO PRODUCTION
 // channelIDs - list of auction channels
@@ -58,11 +63,16 @@ for (let i = 0; i <= 8; i++) {
 
 const auctionTimesFile = "auctionTimes.txt" 
 
-const day = 86400000;
 const second = 1000;
-const AUCTION_COOLDOWN = 5 * second;//30 * day;
-const AUCTION_LENGTH =  10*second;// day
+const hour = second*60*60;
+const day = 86400000;
+const AUCTION_COOLDOWN = 5 * second; //30 * day;
+const AUCTION_LENGTH =  120 * second; // day
+var AUCTION_LENGTH_HANDLER = 20 * hour;
+const AUCTION_BAN_LENGTH = 180 * day;
 
+const aucBannedRoleName = 'auction banned';
+const handlerRoleName = 'auction-handler';
 
 const GUILD_ID = '1013859678201069568'; 
 const TICKET_CAT_ID = '1167881102938091560';
@@ -146,7 +156,7 @@ function createTicket(message) {
         {name: ' ', value: '**5.** While waiting in queue after submitting your ticket, **DO NOT** trade your cards away! '},
         {name: ' ', value: 'If there are any problems, DM a handler!'}
       )
-      .setFooter({text: "Type `!close` to close the channel. The channel will close in 3 minutes."})
+      .setFooter({text: "Type `!close` to close the channel. The channel will self-close in 5 minutes."})
       .setColor(0x4CEB34);
     channel.send({ embeds: [resp2]});
 
@@ -156,7 +166,7 @@ function createTicket(message) {
     channel.send({ embeds: [resp3]});
 
     // Close the channel if inactive
-    const closeTime = new Date(new Date().getTime() + 180 * second); 
+    const closeTime = new Date(new Date().getTime() + 300 * second); 
     schedule.scheduleJob(closeTime, () => {
       // check to see if channel is open
       if(client.guilds.cache.get(GUILD_ID) && guild.channels.cache.has(channel.id)) 
@@ -286,7 +296,7 @@ client.on('messageCreate', async message => {
   }
 
   // Add a new auction
-  if(containsAuctionRoles(message.content) && message.content.includes('Auctioneer') && message.content.toLowerCase().includes('item 1')){ 
+  if(containsAuctionRoles(message.content) && message.content.toLowerCase().includes('item 1')){ 
     const getchannel = await client.channels.fetch(message.channel.id);
     
     const channelString = '' + getchannel;
@@ -294,12 +304,24 @@ client.on('messageCreate', async message => {
       return;
     
     // Get the character names from message
-    channels.get(channelString).updateAucStringArray(message.content) 
+    channels.get(channelString).updateAucStringArray(message.content);
+
+    // Check if auctioneer is a handler
+    var aucLen = AUCTION_LENGTH;
+    const userMention = message.mentions.users.first();
+    if (userMention) {
+      const handlerRole = message.guild.roles.cache.find((role) => role.name === handlerRoleName);
+      const auctioneer = await message.guild.members.fetch(userMention.id);
+      const hasHandlerRole = auctioneer.roles.cache.has(handlerRole.id); 
+      if (hasHandlerRole) {
+        aucLen = AUCTION_LENGTH_HANDLER;
+      }
+    }
 
     // Configure timers
     const currentTime = new Date();
-    channels.get(channelString).updateDate(currentTime) // Get current time
-    const endAuctionDate = new Date(currentTime.getTime() + AUCTION_LENGTH); 
+    channels.get(channelString).updateDate(currentTime, aucLen); 
+    const endAuctionDate = new Date(currentTime.getTime() + aucLen); 
 
     
     auctionToFile(auctionTimesFile, channels, channelIDs); // Save auction to a file
@@ -309,7 +331,7 @@ client.on('messageCreate', async message => {
     schedule.scheduleJob(endAuctionDate, () => {
       channels.get(channelString).finishAuction();
       message.reply("Waiting...");
-      privchannel.send('<@' + message.author.id + '>, <#' + getchannel + '> is done.');
+      privchannel.send('<#' + getchannel + '> is done.');
       auctionToFile(auctionTimesFile, channels, channelIDs);
 
       const [queueMsgID, nextHandlerID] = handlerClaims.top()[0]; // ping the next handler
@@ -318,7 +340,6 @@ client.on('messageCreate', async message => {
         return;
       }
       privchannel.send("<#" + QUEUE_CHANNEL_ID + ">: <@" + nextHandlerID + ">");
-      //handlerClaims.delete(queueMsgID);
     });
 
     // Display open channels and timers
@@ -327,7 +348,7 @@ client.on('messageCreate', async message => {
     displayTimers(privchannel, channelIDs, channels);
   
     // Display current auctions
-  } else if(message.content.startsWith('!auction')){
+  } else if(message.content == '!auction' || message.content == '!auctions' ){
     const getchannel = await client.channels.fetch(message.channel.id);
   
     var s = '';
@@ -537,18 +558,20 @@ client.on('messageCreate', async message => {
   } else if(!message.author.bot && !message.guild && !message.content.startsWith('!ca')){
     message.reply('Hello, this is Waifugami\'s auction manager! Please type `!ca` to create an auction ticket.');
   
-  } else if (message.content.startsWith('!ca') && tickets.has(message.author.id)){
-    message.reply("You have an active ticket!");
+  // } else if (message.content.startsWith('!ca') && tickets.has(message.author.id)){
+  //   message.reply("You have an active ticket!");
     
-  } else if(message.content.startsWith('!ca') ){
+  } else if(!message.author.bot && !message.guild && message.content.startsWith('!ca') ){
 
     try{
-      if (lastAuctioned.has(message.author.id)){
-        const dateToAucAgain = new Date(lastAuctioned.get(message.author.id).getTime() + AUCTION_COOLDOWN);
-        if (new Date() < dateToAucAgain) 
-          message.reply("It hasn't been one month since your last auction! You can auction again on " + dateToAucAgain.toLocaleDateString("en-US") + '.');
-        else
-          createTicket(message);
+      if ( tickets.has(message.author.id) ) {
+        message.reply("You have an active ticket. Please click the link above!");
+      } else if (lastAuctioned.has(message.author.id)){
+          const dateToAucAgain = new Date(lastAuctioned.get(message.author.id).getTime() + AUCTION_COOLDOWN);
+          if (new Date() < dateToAucAgain) 
+            message.reply("It hasn't been one month since your last auction! You can auction again on " + dateToAucAgain.toLocaleDateString("en-US") + '.');
+          else
+            createTicket(message);
       } else
         createTicket(message);
     } catch(e) {
@@ -729,7 +752,7 @@ client.on('messageCreate', async message => {
       newEvent = arrEvent[2] + ' ' + arrEvent[3];
 
     } catch(e) { 
-      message.reply("Wrong format `!addoption :emoji: Event Year`");
+      message.reply("Wrong format `!addevent :emoji: Event Year`");
       return;
     }
 
@@ -789,10 +812,150 @@ client.on('messageCreate', async message => {
       message.reply("Something went wrong...");
     }
 
-   } else if (message.content.startsWith('!syncqueue') && message.channel.id === HANDLER_CHAT_CHANNEL_ID) {
+  } else if (message.content.startsWith('!syncqueue') && message.channel.id === HANDLER_CHAT_CHANNEL_ID) {
     reloadMessages()
     .then(() => message.reply("Synced up queue channel!"));
-   }
+  } else if (message.content.startsWith('!ban') && message.channel.id === HANDLER_CHAT_CHANNEL_ID ) {
+
+    const args = message.content.replace(/ +/g, ' ').split(' ');     
+    //const args = message.content.split(' ');
+    const userID = args[1];
+
+    // Check formatting
+    if (args.length < 3 || !(/^\d+$/.test(userID))) {
+      message.reply("Wrong format `!ban userID reason`");
+      return;
+    } 
+    const member = await message.guild.members.fetch(userID);
+    if (!member) {
+      message.reply(userID + " is not a userID or not in the server!");  
+      return;
+    }
+
+    // Give user auction ban role
+    const role = message.guild.roles.cache.find((role) => role.name === aucBannedRoleName);
+    if (role) {
+
+      const hasRole = member.roles.cache.has(role.id); // check if user already banned
+      if (hasRole) {
+        message.reply(userID + " is already auction banned.");
+        return;
+      }
+
+      member.roles.add(role)
+        .then(() => {
+          message.channel.send("Banned " + userID + " from auctions!");
+          
+          // Remove ban after 180 days
+          const auctionUnbanDate = new Date(new Date().getTime() + AUCTION_BAN_LENGTH);
+          schedule.scheduleJob(auctionUnbanDate, () => {
+            member.roles.remove(role);
+          });
+
+        })
+        .catch((error) => {
+          console.error('Error adding role:', error);
+          message.channel.send('Error adding role. Please check the bot\'s permissions.');
+        });
+    }
+
+    // Save reason to database
+    const reason = args.slice(2).join(' ');
+    //message.channel.send(reason);
+  } else if (message.content.startsWith('!unban') && message.channel.id === HANDLER_CHAT_CHANNEL_ID ) {
+
+    const args = message.content.replace(/ +/g, ' ').split(' ');     
+    //const args = message.content.split(' ');
+    const userID = args[1];
+
+
+    // Check formatting
+    if (args.length != 2 || !(/^\d+$/.test(userID))) {
+      message.reply("Wrong format `!unban userID`");
+      return;
+    }
+    const member = await message.guild.members.fetch(userID);
+    if (!member) {
+      message.reply(userID + " is not a userID or not in the server!");  
+      return;
+    }
+
+    // Remove auction banned role
+    const role = message.guild.roles.cache.find((role) => role.name === aucBannedRoleName);
+    if (role) {
+      const hasRole = member.roles.cache.has(role.id); // check if user already banned
+      if (!hasRole) {
+        message.reply(userID + " is not auction banned.");
+        return;
+      }
+
+      try {
+        const member = await message.guild.members.fetch(userID);
+        await member.roles.remove(role);
+
+        message.channel.send("Unbanned " + userID + " from auctions!");
+      } catch (error) {
+        console.error('Error removing role:', error);
+        message.channel.send('Error removing role. Please check the bot\'s permissions.');
+      }
+    }
+
+  } else if (message.content.startsWith('!warn') && message.channel.id === HANDLER_CHAT_CHANNEL_ID ) {
+ 
+    const args = message.content.split(' ');
+    const userID = args[1];
+
+
+    // Check formatting
+    if (args.length < 3 || !(/^\d+$/.test(userID))) {
+      message.reply("Wrong format `!warn userID reason`");
+      return;
+    }
+    const member = await message.guild.members.fetch(userID);
+    if (!member) {
+      message.reply(userID + " is not a userID or not in the server!");  
+      return;
+    }
+
+    message.reply("warned?")
+    // Save reason to database
+    const reason = args.slice(2).join(' ');
+    //message.channel.send(reason);
+
+  } else if (message.content.startsWith('!removewarning') && message.channel.id === HANDLER_CHAT_CHANNEL_ID ) {
+ 
+    const args = message.content.split(' ');
+    const userID = args[1];
+
+    // Check formatting
+    if (args.length < 3 || !(/^\d+$/.test(userID))) {
+      message.reply("Wrong format `!removewarning userID warningNumber`");
+      return;
+    }
+    const member = await message.guild.members.fetch(userID);
+    if (!member) {
+      message.reply(userID + " is not a userID or not in the server!");  
+      return;
+    }
+
+    message.reply("warned?")
+    // Save reason to database
+    const reason = args.slice(2).join(' ');
+    //message.channel.send(reason);
+
+  } else if (message.content.startsWith('!auctionlength') && message.channel.id === HANDLER_CHAT_CHANNEL_ID ) {
+    // change the auction length only for handlers (default is 20h)
+    try {    
+      const args = message.content.split(' ');
+      if (args.length != 2 || !(/^\d+$/.test(args[1]))) {
+        throw 1;
+      }
+      AUCTION_LENGTH_HANDLER = parseInt(args[1]) * hour;
+      message.channel.send("Set handler auction length to " + args[1] + "h.");
+    } catch(e) {
+      message.reply("Something went wrong...")
+    }
+  }
    // COMMANDS BELOW USED FOR TESTING
    //else if (message.content.startsWith('!embed')) {
   //   // Add to auction-handling
@@ -887,6 +1050,7 @@ client.on('messageReactionAdd', (reaction, user) =>{
             tickets.delete(auctioneerID);
             ticketsGamiCard.delete(auctioneerID); 
             reaction.message.delete(); 
+            client.users.cache.get(auctioneerID).send("Your ticket was accepted!");
           });
         
         // Add to auction-handling   

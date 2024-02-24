@@ -51,7 +51,7 @@ export function parseAuctionMsg(auctionMess){
         chan.date = "Done";
         chan.status = "Done";
       } else {
-        chan.updateDate(new Date(splitDates[i]));
+        chan.updateDate(new Date(splitDates[i]), day);
       }
       chan.auctionStringArray = splitAuctionStringArray[i];
     }

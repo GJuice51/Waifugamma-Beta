@@ -15,7 +15,7 @@ export class ChannelOBJ {
         this.auctionStringArray = '';
     }
 
-    updateDate(date) {
+    updateDate(date, auclen=day) {
         if (date === 'Done') {
             this.finishAuction();
             return;
@@ -24,7 +24,7 @@ export class ChannelOBJ {
         this.status = time(date, 'R');
         var timeNow = date.getTime();
         timeNow = timeNow / 1000 - (timeNow % 1000) / 1000;
-        this.auctionCountDown = time(timeNow + day / 1000, 'R');
+        this.auctionCountDown = time(timeNow + auclen / 1000, 'R');
     };
 
     updateAucStringArray(msg) {
