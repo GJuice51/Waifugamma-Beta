@@ -1,5 +1,5 @@
 import { GoogleSpreadsheet } from 'google-spreadsheet';
-import creds from './client_secret.json' assert { type: 'json' };
+import creds from '../client_secret.json' assert { type: 'json' };
 const doc = new GoogleSpreadsheet('1DNFZ_NeC8j7OxF7t-8qacL9ia5y4UMW9-ZAboPFaW58');
 
 // print winners nicely

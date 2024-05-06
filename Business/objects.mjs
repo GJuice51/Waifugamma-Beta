@@ -1,7 +1,7 @@
-import {parseAuctionMsg} from './functions.mjs';
-import {time} from 'discord.js';
+import { parseAuctionMsg } from './Functions/parseAuctionMsg.mjs';
+import { time } from 'discord.js';
+import { day } from './constants.mjs';
 
-const day = 86400000;
 const COL_OMEGA = 12186367;
 const COL_EVENT = 15293728;
 const COL_ZETA = 16076006;
@@ -12,11 +12,12 @@ export class ChannelOBJ {
         this.date = 'Done';
         this.status = 'Done';
         this.auctionCountDown = 'Done';
+        this.auctionCDISOString = 'Done';
         this.auctionStringArray = '';
     }
 
     updateDate(date, auclen=day) {
-        if (date === 'Done') {
+        if (date === 'Done' || new Date() - date > day) {
             this.finishAuction();
             return;
         }
@@ -25,6 +26,7 @@ export class ChannelOBJ {
         var timeNow = date.getTime();
         timeNow = timeNow / 1000 - (timeNow % 1000) / 1000;
         this.auctionCountDown = time(timeNow + auclen / 1000, 'R');
+        this.auctionCDISOString = new Date(date.getTime() + auclen).toISOString();
     };
 
     updateAucStringArray(msg) {
@@ -34,6 +36,7 @@ export class ChannelOBJ {
     finishAuction() {
         this.status = 'Done';
         this.auctionCountDown = 'Done';
+        this.auctionCDISOString = 'Done';
         this.date = 'Done';
     };
 
@@ -59,20 +62,20 @@ export class GamiCard {
     }
 };
 
-export class PicSwap {
-    constructor(imgURL1, r1 , imgURL2, r2){
-        this.pic = 1;
-        this.imgURL1 = imgURL1;
-        this.rarity1 = r1;
-        this.imgURL2 = imgURL2;
-        this.rarity2 = r2;
-    }
+// export class PicSwap {
+//     constructor(imgURL1, r1 , imgURL2, r2){
+//         this.pic = 1;
+//         this.imgURL1 = imgURL1;
+//         this.rarity1 = r1;
+//         this.imgURL2 = imgURL2;
+//         this.rarity2 = r2;
+//     }
     
-    flipPic(){
-        this.pic = (this.pic === 2)? 1: 2;
-        return (this.pic === 1)? [this.imgURL1, this.rarity1] : [this.imgURL2, this.rarity2];
-    }
-}
+//     flipPic(){
+//         this.pic = (this.pic === 2)? 1: 2;
+//         return (this.pic === 1)? [this.imgURL1, this.rarity1] : [this.imgURL2, this.rarity2];
+//     }
+// }
 
 export class LimitedMap {
     
@@ -114,3 +117,17 @@ export class LimitedMap {
         return handlings;
     }
 }
+
+// Maps
+//export var eventOptionsArray = [];
+//export var SELECT_MENU_BUILDER_AUCTIONS = createSelectStringMenuAuc(eventOptionsArray); //MOVED TO SQL
+export var verificationMessages = new Map(); // VerificationMessage -> auctioneerID
+export var tickets = new Map(); // auctioneerID -> channelID
+export var ticketsGamiCard = new Map(); // auctioneerID -> [GamiCard, Gamicard, str]
+//export var lastAuctioned = new Map(); // auctioneerID -> Date                   // MOVED TO SQL
+export var handlingAuctionLimit = new Map(); // handlerID -> count
+//export var queueImageURL = new LimitedMap(100); // QueueMessage -> PicSwap       // MOVED TO SQL
+export var handlerClaims = new LimitedMap(100); // queueMessageID -> handlerID   
+//export var cardLastAuctioned = new Map(); //globalID -> DATE                    // MOVED TO SQL
+                                        // Make this -> [DATE, # times auctioned] 
+export var queueReacted = new Map(); // queueMessageID -> array of IDs

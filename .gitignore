@@ -2,10 +2,11 @@
 /Functions/
 /Handlers/
 /node_modules/
-.env
 *.json
-*.js
 Procfile
 *.log
+.env
 index copy.mjs
 indexcopy.mjs
+testdelete.js
+auctionTimes.txt
